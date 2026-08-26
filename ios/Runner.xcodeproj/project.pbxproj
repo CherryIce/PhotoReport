@@ -199,6 +199,7 @@
 				9705A1C41CF9048500538489 /* Embed Frameworks */,
 				3B06AD1E1E4923F5004D2608 /* Thin Binary */,
 				5474A7E34404FA9AB075401D /* [CP] Embed Pods Frameworks */,
+				A1B2C3D4E5F60718293A4B5C /* [Release] Verify Formal Inputs */,
 			);
 			buildRules = (
 			);
@@ -270,6 +271,24 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		A1B2C3D4E5F60718293A4B5C /* [Release] Verify Formal Inputs */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"${SRCROOT}/scripts/release_input_guard.sh",
+				"${SRCROOT}/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-1024x1024@1x.png",
+				"${SRCROOT}/../pubspec.yaml",
+			);
+			name = "[Release] Verify Formal Inputs";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "/bin/sh \"${SRCROOT}/scripts/release_input_guard.sh\"";
+		};
 		3B06AD1E1E4923F5004D2608 /* Thin Binary */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;

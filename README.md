@@ -38,6 +38,14 @@ flutter test
 
 照片、项目记录和 PDF 默认不上传网络。App 仅在用户主动拍照或选择照片时请求相机、相册权限；分享报告时由用户在 iOS 系统面板中选择接收方。
 
+## Release 打包边界
+
+- `artifacts/` 只存放本地验证截图并由 Git 忽略，禁止加入 `pubspec.yaml` assets。
+- Flutter 测试只放在 `test/`，原生测试只属于 `RunnerTests` Target；两者都不属于 Runner 的生产资源。
+- Release 构建会执行 `ios/scripts/release_input_guard.sh`，发现测试文件、验证截图或 Flutter 默认占位图标会直接失败。
+- 当前 AppIcon 仍是 Flutter 默认占位图标，因此正式 Archive 默认被阻止；收到确认后的品牌图标并替换全套尺寸后才可发布。
+- 旧的透明 `LaunchImage` 已从 LaunchScreen 和 Assets 中移除，启动页只使用正式的纯色系统背景。
+
 ## 尚未覆盖
 
 - Android 报告生成与分享。
