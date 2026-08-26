@@ -3,7 +3,7 @@ import QuickLook
 import UIKit
 
 @main
-@objc class AppDelegate: FlutterAppDelegate, QLPreviewControllerDataSource, FlutterPluginRegistrant {
+@objc class AppDelegate: FlutterAppDelegate, QLPreviewControllerDataSource {
   private var previewURL: URL?
   private let pdfInk = UIColor(red: 0.09, green: 0.19, blue: 0.18, alpha: 1)
   private let pdfMuted = UIColor(red: 0.38, green: 0.45, blue: 0.44, alpha: 1)
@@ -12,12 +12,12 @@ import UIKit
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
-    pluginRegistrant = self
+    GeneratedPluginRegistrant.register(with: self)
+    registerPhotoReportPlugin(with: self)
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
-  func register(with registry: FlutterPluginRegistry) {
-    GeneratedPluginRegistrant.register(with: registry)
+  private func registerPhotoReportPlugin(with registry: FlutterPluginRegistry) {
     guard let registrar = registry.registrar(forPlugin: "PhotoReportPDF") else { return }
     let channel = FlutterMethodChannel(
       name: "com.starburst.photo_report/report",
