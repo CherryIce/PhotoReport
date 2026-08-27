@@ -24,16 +24,19 @@ class SectionHeader extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
+              LText(
                 title,
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(
                   fontWeight: FontWeight.w800,
-                  color: inkColor,
+                  color: context.appColors.ink,
                 ),
               ),
               if (subtitle != null) ...[
                 const SizedBox(height: 4),
-                Text(subtitle!, style: const TextStyle(color: mutedColor)),
+                LText(
+                  subtitle!,
+                  style: TextStyle(color: context.appColors.muted),
+                ),
               ],
             ],
           ),
@@ -61,6 +64,7 @@ class MetricTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
+      constraints: BoxConstraints(minHeight: compact ? 68 : 78),
       padding: EdgeInsets.symmetric(
         horizontal: compact ? 12 : 16,
         vertical: compact ? 10 : 14,
@@ -72,7 +76,7 @@ class MetricTile extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
+          LText(
             '$value',
             style: TextStyle(
               color: color,
@@ -82,7 +86,12 @@ class MetricTile extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 6),
-          Text(label, style: const TextStyle(color: mutedColor, fontSize: 12)),
+          LText(
+            label,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: context.appColors.muted, fontSize: 12),
+          ),
         ],
       ),
     );
@@ -97,11 +106,14 @@ class StatusBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = switch (status) {
-      IssueStatus.pending => const Color(0xFFCC6B22),
-      IssueStatus.inProgress => const Color(0xFF2C69B8),
-      IssueStatus.completed => const Color(0xFF23855C),
+      IssueStatus.unspecified => context.appColors.muted,
+      IssueStatus.pending => context.appColors.pending,
+      IssueStatus.inProgress => context.appColors.inProgress,
+      IssueStatus.completed => context.appColors.completed,
     };
-    return _Badge(label: status.label, color: color);
+    return status == IssueStatus.unspecified
+        ? const SizedBox.shrink()
+        : _Badge(label: status.label, color: color);
   }
 }
 
@@ -113,11 +125,14 @@ class SeverityBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = switch (severity) {
-      IssueSeverity.low => const Color(0xFF5E7772),
-      IssueSeverity.medium => const Color(0xFFCC6B22),
-      IssueSeverity.high => const Color(0xFFC73A3A),
+      IssueSeverity.unspecified => context.appColors.muted,
+      IssueSeverity.low => context.appColors.muted,
+      IssueSeverity.medium => context.appColors.pending,
+      IssueSeverity.high => context.appColors.risk,
     };
-    return _Badge(label: '${severity.label}风险', color: color);
+    return severity == IssueSeverity.unspecified
+        ? const SizedBox.shrink()
+        : _Badge(label: '${severity.label}优先级', color: color);
   }
 }
 
@@ -135,8 +150,10 @@ class _Badge extends StatelessWidget {
         color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(99),
       ),
-      child: Text(
+      child: LText(
         label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
         style: TextStyle(
           color: color,
           fontSize: 12,
@@ -156,19 +173,19 @@ Future<bool> confirmAction(
   return await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
-          title: Text(title),
-          content: Text(message),
+          title: LText(title),
+          content: LText(message),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
-              child: const Text('取消'),
+              child: const LText('取消'),
             ),
             FilledButton(
               style: FilledButton.styleFrom(
                 backgroundColor: Theme.of(context).colorScheme.error,
               ),
               onPressed: () => Navigator.pop(context, true),
-              child: Text(confirmLabel),
+              child: LText(confirmLabel),
             ),
           ],
         ),
@@ -179,5 +196,5 @@ Future<bool> confirmAction(
 void showErrorSnackBar(BuildContext context, Object error) {
   ScaffoldMessenger.of(
     context,
-  ).showSnackBar(SnackBar(content: Text('操作失败：$error')));
+  ).showSnackBar(SnackBar(content: LText('操作失败：$error')));
 }

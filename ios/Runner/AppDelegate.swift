@@ -3,10 +3,19 @@ import QuickLook
 import UIKit
 
 @main
-@objc class AppDelegate: FlutterAppDelegate, QLPreviewControllerDataSource {
+@objc class AppDelegate: FlutterAppDelegate, QLPreviewControllerDataSource, UIDocumentPickerDelegate {
   private var previewURL: URL?
-  private let pdfInk = UIColor(red: 0.09, green: 0.19, blue: 0.18, alpha: 1)
-  private let pdfMuted = UIColor(red: 0.38, green: 0.45, blue: 0.44, alpha: 1)
+  private var pendingDocumentResult: FlutterResult?
+  private let pdfBrand = UIColor(photoReportHex: 0x0B6B63)
+  private let pdfInk = UIColor(photoReportHex: 0x17312E)
+  private let pdfMuted = UIColor(photoReportHex: 0x5F716D)
+  private let pdfCanvas = UIColor(photoReportHex: 0xF4F7F6)
+  private let pdfSoftSurface = UIColor(photoReportHex: 0xE7F0EE)
+  private let pdfPending = UIColor(photoReportHex: 0xAD5417)
+  private let pdfInProgress = UIColor(photoReportHex: 0x2465A8)
+  private let pdfCompleted = UIColor(photoReportHex: 0x1F7650)
+  private let pdfRisk = UIColor(photoReportHex: 0xB7353D)
+  private let pdfAnnotation = UIColor(photoReportHex: 0xFF2D2D)
 
   override func application(
     _ application: UIApplication,
@@ -29,28 +38,51 @@ import UIKit
   }
 
   private func handleReportCall(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
-    guard let arguments = call.arguments as? [String: Any] else {
-      result(FlutterError(code: "invalid_arguments", message: "缺少报告参数", details: nil))
-      return
-    }
+    let arguments = call.arguments as? [String: Any] ?? [:]
+    let copy = ReportCopy(languageCode: arguments["languageCode"] as? String ?? "zh")
     switch call.method {
+    case "getPreferredLanguage":
+      result(UserDefaults.standard.string(forKey: "preferredLanguage"))
+    case "clearPreferredLanguage":
+      UserDefaults.standard.removeObject(forKey: "preferredLanguage")
+      result(nil)
+    case "setPreferredLanguage":
+      guard
+        let languageCode = arguments["languageCode"] as? String,
+        ["zh", "en"].contains(languageCode)
+      else {
+        result(FlutterError(code: "invalid_language", message: copy.text("语言设置无效"), details: nil))
+        return
+      }
+      UserDefaults.standard.set(languageCode, forKey: "preferredLanguage")
+      result(nil)
+    case "getOnboardingComplete":
+      result(UserDefaults.standard.bool(forKey: "onboardingComplete"))
+    case "setOnboardingComplete":
+      guard let isComplete = arguments["isComplete"] as? Bool else {
+        result(FlutterError(code: "invalid_onboarding_state", message: "Invalid onboarding state", details: nil))
+        return
+      }
+      UserDefaults.standard.set(isComplete, forKey: "onboardingComplete")
+      result(nil)
     case "generateReport":
       guard
         let project = arguments["project"] as? [String: Any],
-        let issues = arguments["issues"] as? [[String: Any]]
+        let issues = arguments["issues"] as? [[String: Any]],
+        let options = arguments["options"] as? [String: Any]
       else {
-        result(FlutterError(code: "invalid_payload", message: "报告数据格式错误", details: nil))
+        result(FlutterError(code: "invalid_payload", message: copy.text("报告数据格式错误"), details: nil))
         return
       }
       do {
-        let url = try generateReport(project: project, issues: issues)
+        let url = try generateReport(project: project, issues: issues, options: options, copy: copy)
         result(url.path)
       } catch {
         result(FlutterError(code: "pdf_generation_failed", message: error.localizedDescription, details: nil))
       }
     case "previewReport":
       guard let path = arguments["path"] as? String, FileManager.default.fileExists(atPath: path) else {
-        result(FlutterError(code: "missing_file", message: "找不到报告文件", details: nil))
+        result(FlutterError(code: "missing_file", message: copy.text("找不到报告文件"), details: nil))
         return
       }
       previewURL = URL(fileURLWithPath: path)
@@ -60,7 +92,7 @@ import UIKit
       result(nil)
     case "shareReport":
       guard let path = arguments["path"] as? String, FileManager.default.fileExists(atPath: path) else {
-        result(FlutterError(code: "missing_file", message: "找不到报告文件", details: nil))
+        result(FlutterError(code: "missing_file", message: copy.text("找不到报告文件"), details: nil))
         return
       }
       let activity = UIActivityViewController(
@@ -74,6 +106,22 @@ import UIKit
       }
       currentViewController()?.present(activity, animated: true)
       result(nil)
+    case "pickBackup":
+      guard pendingDocumentResult == nil else {
+        result(FlutterError(code: "picker_busy", message: copy.text("文件选择器正在使用"), details: nil))
+        return
+      }
+      let picker = UIDocumentPickerViewController(
+        documentTypes: ["public.data", "public.json"],
+        in: .import
+      )
+      guard let presenter = currentViewController() else {
+        result(FlutterError(code: "missing_presenter", message: copy.text("暂时无法打开文件选择器"), details: nil))
+        return
+      }
+      pendingDocumentResult = result
+      picker.delegate = self
+      presenter.present(picker, animated: true)
     default:
       result(FlutterMethodNotImplemented)
     }
@@ -88,6 +136,19 @@ import UIKit
     previewItemAt index: Int
   ) -> QLPreviewItem {
     previewURL! as NSURL
+  }
+
+  func documentPicker(
+    _ controller: UIDocumentPickerViewController,
+    didPickDocumentsAt urls: [URL]
+  ) {
+    pendingDocumentResult?(urls.first?.path)
+    pendingDocumentResult = nil
+  }
+
+  func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+    pendingDocumentResult?(nil)
+    pendingDocumentResult = nil
   }
 
   private func currentViewController() -> UIViewController? {
@@ -109,6 +170,28 @@ import UIKit
     project: [String: Any],
     issues: [[String: Any]]
   ) throws -> URL {
+    try generateReport(
+      project: project,
+      issues: issues,
+      options: [
+        "layout": "detailed",
+        "includePosition": true,
+        "includeStatus": true,
+        "includeSeverity": true,
+        "includeAssignee": true,
+        "includeDueDate": true,
+        "includeProjectDetails": true,
+        "includeNotes": true,
+      ]
+    )
+  }
+
+  func generateReport(
+    project: [String: Any],
+    issues: [[String: Any]],
+    options: [String: Any],
+    copy: ReportCopy = ReportCopy(languageCode: "zh")
+  ) throws -> URL {
     let fileManager = FileManager.default
     let documents = try fileManager.url(
       for: .documentDirectory,
@@ -118,7 +201,7 @@ import UIKit
     )
     let reports = documents.appendingPathComponent("PhotoReport/Reports", isDirectory: true)
     try fileManager.createDirectory(at: reports, withIntermediateDirectories: true)
-    let rawName = project.string("name", fallback: "现场报告")
+    let rawName = project.string("name", fallback: copy.text("现场报告"))
     let safeName = rawName
       .replacingOccurrences(of: "/", with: "-")
       .replacingOccurrences(of: ":", with: "-")
@@ -129,8 +212,8 @@ import UIKit
     let pageBounds = CGRect(x: 0, y: 0, width: 595, height: 842)
     let format = UIGraphicsPDFRendererFormat()
     format.documentInfo = [
-      kCGPDFContextTitle as String: "\(rawName) 现场问题报告",
-      kCGPDFContextCreator as String: "现场照片报告",
+      kCGPDFContextTitle as String: copy.reportTitle(rawName),
+      kCGPDFContextCreator as String: copy.text("现场照片记录"),
     ]
     let renderer = UIGraphicsPDFRenderer(bounds: pageBounds, format: format)
     var pageNumber = 0
@@ -143,19 +226,22 @@ import UIKit
       }
 
       func footer() {
-        let text = "现场照片报告  ·  第 \(pageNumber) 页"
+        let text = copy.footer(pageNumber: pageNumber)
         drawText(
           text,
-          in: CGRect(x: 42, y: 814, width: 511, height: 14),
-          font: .systemFont(ofSize: 8),
-          color: UIColor(red: 0.43, green: 0.50, blue: 0.49, alpha: 1),
+          in: CGRect(x: 42, y: 808, width: 511, height: 22),
+          font: .systemFont(ofSize: 7.4),
+          color: pdfMuted,
           alignment: .center
         )
       }
 
-      beginPage()
-      drawCover(project: project, issues: issues, pageBounds: pageBounds)
-      footer()
+      let concise = options.string("layout") == "concise"
+      if !concise {
+        beginPage()
+        drawCover(project: project, issues: issues, options: options, copy: copy, pageBounds: pageBounds)
+        footer()
+      }
 
       for issue in issues {
         let photos = issue["photos"] as? [[String: Any]] ?? []
@@ -173,15 +259,19 @@ import UIKit
             issue: issue,
             photos: chunk,
             continuation: chunkIndex > 0,
+            options: options,
+            copy: copy,
             pageBounds: pageBounds
           )
           footer()
         }
       }
 
-      beginPage()
-      drawSignoff(project: project, issues: issues, pageBounds: pageBounds)
-      footer()
+      if !concise && options.bool("includeNotes") {
+        beginPage()
+        drawNotesPage(project: project, issues: issues, copy: copy, pageBounds: pageBounds)
+        footer()
+      }
     }
     return url
   }
@@ -189,71 +279,84 @@ import UIKit
   private func drawCover(
     project: [String: Any],
     issues: [[String: Any]],
+    options: [String: Any],
+    copy: ReportCopy,
     pageBounds: CGRect
   ) {
-    let teal = UIColor(red: 0.043, green: 0.459, blue: 0.420, alpha: 1)
+    let teal = pdfBrand
     teal.setFill()
     UIRectFill(CGRect(x: 0, y: 0, width: pageBounds.width, height: 17))
 
-    let company = project.string("companyName", fallback: "现场质量检查")
+    let company = options.bool("includeProjectDetails")
+      ? project.string("companyName", fallback: copy.text("现场情况记录"))
+      : copy.text("现场情况记录")
     drawText(company, in: CGRect(x: 42, y: 48, width: 511, height: 24), font: .boldSystemFont(ofSize: 13), color: teal)
     drawText(
-      "现场问题检查报告",
+      copy.text("现场照片沟通记录"),
       in: CGRect(x: 42, y: 132, width: 511, height: 54),
-      font: .boldSystemFont(ofSize: 34),
-      color: UIColor(red: 0.09, green: 0.19, blue: 0.18, alpha: 1)
+      font: .boldSystemFont(ofSize: copy.isEnglish ? 30 : 34),
+      color: pdfInk
     )
     drawText(
-      "FIELD ISSUE REPORT",
+      "FIELD PHOTO NOTES",
       in: CGRect(x: 44, y: 190, width: 511, height: 22),
       font: .systemFont(ofSize: 11, weight: .semibold),
-      color: UIColor(red: 0.41, green: 0.49, blue: 0.47, alpha: 1)
+      color: pdfMuted
     )
 
     let infoRect = CGRect(x: 42, y: 254, width: 511, height: 190)
-    UIColor(red: 0.95, green: 0.97, blue: 0.965, alpha: 1).setFill()
+    pdfSoftSurface.setFill()
     UIBezierPath(roundedRect: infoRect, cornerRadius: 14).fill()
     drawText(project.string("name"), in: CGRect(x: 64, y: 278, width: 467, height: 30), font: .boldSystemFont(ofSize: 20), color: pdfInk)
-    drawInfoRow("项目地址", value: project.string("address"), y: 324)
-    drawInfoRow("检查日期", value: project.string("inspectionDate"), y: 356)
-    drawInfoRow("检查人员", value: project.string("inspectorName", fallback: "未填写"), y: 388)
+    if options.bool("includeProjectDetails") {
+      drawInfoRow(copy.text("记录地点"), value: project.string("address"), y: 324, labelWidth: copy.isEnglish ? 104 : 74)
+      drawInfoRow(copy.text("记录日期"), value: project.string("inspectionDate"), y: 356, labelWidth: copy.isEnglish ? 104 : 74)
+      drawInfoRow(copy.text("记录人员"), value: project.string("inspectorName", fallback: copy.text("未填写")), y: 388, labelWidth: copy.isEnglish ? 104 : 74)
+    }
 
-    let pending = issues.filter { $0.string("status") == "待整改" }.count
+    let pending = issues.filter { $0.string("status") == "待处理" }.count
     let progress = issues.filter { $0.string("status") == "处理中" }.count
     let completed = issues.filter { $0.string("status") == "已完成" }.count
     let high = issues.filter { $0.string("severity") == "高" }.count
-    let metrics = [
-      ("问题总数", issues.count, UIColor(red: 0.09, green: 0.19, blue: 0.18, alpha: 1)),
-      ("待整改", pending, UIColor(red: 0.80, green: 0.42, blue: 0.13, alpha: 1)),
-      ("处理中", progress, UIColor(red: 0.17, green: 0.41, blue: 0.72, alpha: 1)),
-      ("已完成", completed, UIColor(red: 0.14, green: 0.52, blue: 0.36, alpha: 1)),
-      ("高风险", high, UIColor(red: 0.78, green: 0.23, blue: 0.23, alpha: 1)),
+    var metrics: [(String, Int, UIColor)] = [
+      (copy.text("记录总数"), issues.count, pdfInk),
     ]
-    let metricWidth: CGFloat = 94
+    if options.bool("includeStatus") {
+      metrics.append((copy.text("待处理"), pending, pdfPending))
+      metrics.append((copy.text("处理中"), progress, pdfInProgress))
+      metrics.append((copy.text("已完成"), completed, pdfCompleted))
+    }
+    if options.bool("includeSeverity") {
+      metrics.append((copy.text("高优先级"), high, pdfRisk))
+    }
+    let metricWidth = min(120, (511 - CGFloat(metrics.count - 1) * 10) / CGFloat(metrics.count))
     for (index, metric) in metrics.enumerated() {
       let x = 42 + CGFloat(index) * (metricWidth + 10)
       drawMetric(label: metric.0, value: metric.1, color: metric.2, rect: CGRect(x: x, y: 482, width: metricWidth, height: 88))
     }
 
-    let rooms = Array(Set(issues.map { $0.string("room") })).filter { !$0.isEmpty }.sorted()
-    drawText("检查范围", in: CGRect(x: 42, y: 618, width: 511, height: 24), font: .boldSystemFont(ofSize: 15), color: pdfInk)
+    if options.bool("includePosition") {
+      let rooms = Array(Set(issues.map { $0.string("room") })).filter { !$0.isEmpty }.sorted()
+      drawText(copy.text("记录范围"), in: CGRect(x: 42, y: 618, width: 511, height: 24), font: .boldSystemFont(ofSize: 15), color: pdfInk)
+      drawText(
+        rooms.isEmpty ? copy.text("尚未记录区域") : rooms.joined(separator: "  ·  "),
+        in: CGRect(x: 42, y: 650, width: 511, height: 64),
+        font: .systemFont(ofSize: 12),
+        color: pdfMuted
+      )
+    }
     drawText(
-      rooms.isEmpty ? "尚未记录检查区域" : rooms.joined(separator: "  ·  "),
-      in: CGRect(x: 42, y: 650, width: 511, height: 64),
-      font: .systemFont(ofSize: 12),
-      color: UIColor(red: 0.35, green: 0.43, blue: 0.42, alpha: 1)
-    )
-    drawText(
-      "本报告中的问题编号、位置、状态和现场照片共同构成交接与整改依据。",
+      copy.text("内容仅用于现场沟通与情况记录，不构成专业鉴定、验收结论或法律意见。"),
       in: CGRect(x: 42, y: 756, width: 511, height: 28),
       font: .systemFont(ofSize: 9),
-      color: UIColor(red: 0.43, green: 0.50, blue: 0.49, alpha: 1)
+      color: pdfMuted
     )
   }
 
-  private func drawInfoRow(_ label: String, value: String, y: CGFloat) {
-    drawText(label, in: CGRect(x: 64, y: y, width: 74, height: 22), font: .systemFont(ofSize: 10), color: pdfMuted)
-    drawText(value, in: CGRect(x: 145, y: y, width: 386, height: 22), font: .systemFont(ofSize: 11, weight: .medium), color: pdfInk)
+  private func drawInfoRow(_ label: String, value: String, y: CGFloat, labelWidth: CGFloat) {
+    drawText(label, in: CGRect(x: 64, y: y, width: labelWidth, height: 22), font: .systemFont(ofSize: 10), color: pdfMuted)
+    let valueX = 64 + labelWidth + 7
+    drawText(value, in: CGRect(x: valueX, y: y, width: 531 - valueX, height: 22), font: .systemFont(ofSize: 11, weight: .medium), color: pdfInk)
   }
 
   private func drawMetric(label: String, value: Int, color: UIColor, rect: CGRect) {
@@ -267,39 +370,62 @@ import UIKit
     issue: [String: Any],
     photos: [[String: Any]],
     continuation: Bool,
+    options: [String: Any],
+    copy: ReportCopy,
     pageBounds: CGRect
   ) {
-    let teal = UIColor(red: 0.043, green: 0.459, blue: 0.420, alpha: 1)
+    let teal = pdfBrand
     let code = issue.string("code")
     teal.setFill()
     UIBezierPath(roundedRect: CGRect(x: 42, y: 38, width: 76, height: 29), cornerRadius: 7).fill()
     drawText(code, in: CGRect(x: 42, y: 45, width: 76, height: 16), font: .boldSystemFont(ofSize: 11), color: .white, alignment: .center)
     drawText(
-      continuation ? "补充照片" : issue.string("category"),
+      continuation ? copy.text("补充照片") : issue.string("category"),
       in: CGRect(x: 130, y: 40, width: 315, height: 26),
       font: .boldSystemFont(ofSize: 19),
       color: pdfInk
     )
-    drawPill(issue.string("severity") + "风险", x: 455, y: 40, color: severityColor(issue.string("severity")))
-    drawPill(issue.string("status"), x: 455, y: 72, color: statusColor(issue.string("status")))
+    let severity = issue.string("severity")
+    if options.bool("includeSeverity") && severity != "未设置" {
+      drawPill(copy.severityPriority(severity), x: 455, y: 40, color: severityColor(severity))
+    }
+    let status = issue.string("status")
+    if options.bool("includeStatus") && status != "未设置" {
+      drawPill(copy.text(status), x: 455, y: 72, color: statusColor(status))
+    }
 
     var photosY: CGFloat = 104
     if !continuation {
-      let detailRect = CGRect(x: 42, y: 92, width: 511, height: 151)
-      UIColor(red: 0.955, green: 0.97, blue: 0.966, alpha: 1).setFill()
+      let concise = options.string("layout") == "concise"
+      let detailHeight: CGFloat = concise
+        ? (options.bool("includePosition") ? 132 : 112)
+        : 151
+      let detailRect = CGRect(x: 42, y: 92, width: 511, height: detailHeight)
+      pdfSoftSurface.setFill()
       UIBezierPath(roundedRect: detailRect, cornerRadius: 12).fill()
-      drawDetailPair(label: "位置", value: "\(issue.string("room")) / \(issue.string("location"))", x: 58, y: 111, width: 300)
-      drawDetailPair(label: "负责人", value: issue.string("assignee", fallback: "未填写"), x: 365, y: 111, width: 168)
-      drawDetailPair(label: "整改期限", value: issue.string("dueDate", fallback: "未设置"), x: 365, y: 154, width: 168)
-      drawText("问题描述", in: CGRect(x: 58, y: 157, width: 72, height: 17), font: .systemFont(ofSize: 9), color: pdfMuted)
-      drawText(issue.string("description"), in: CGRect(x: 58, y: 177, width: 292, height: 50), font: .systemFont(ofSize: 10.5), color: pdfInk)
-      photosY = 265
+      var descriptionY: CGFloat = 111
+      if options.bool("includePosition") {
+        let room = issue.string("room")
+        let location = issue.string("location")
+        let position = location.isEmpty ? room : "\(room) / \(location)"
+        drawDetailPair(label: copy.text("位置"), value: position, x: 58, y: 107, width: 292)
+        descriptionY = 151
+      }
+      if !concise && options.bool("includeAssignee") {
+        drawDetailPair(label: copy.text("负责人"), value: issue.string("assignee", fallback: copy.text("未填写")), x: 365, y: 107, width: 168)
+      }
+      if !concise && options.bool("includeDueDate") {
+        drawDetailPair(label: copy.text("处理期限"), value: issue.string("dueDate", fallback: copy.text("未设置")), x: 365, y: 150, width: 168)
+      }
+      drawText(copy.text("照片说明"), in: CGRect(x: 58, y: descriptionY, width: copy.isEnglish ? 118 : 72, height: 17), font: .systemFont(ofSize: 9), color: pdfMuted)
+      drawText(issue.string("description"), in: CGRect(x: 58, y: descriptionY + 20, width: concise ? 475 : 292, height: concise ? 43 : 50), font: .systemFont(ofSize: 10.5), color: pdfInk)
+      photosY = concise ? 92 + detailHeight + 22 : 265
     }
 
     if photos.isEmpty {
-      UIColor(red: 0.95, green: 0.96, blue: 0.96, alpha: 1).setFill()
+      pdfCanvas.setFill()
       UIBezierPath(roundedRect: CGRect(x: 42, y: photosY, width: 511, height: 250), cornerRadius: 12).fill()
-      drawText("此问题未附现场照片", in: CGRect(x: 42, y: photosY + 112, width: 511, height: 24), font: .systemFont(ofSize: 12), color: pdfMuted, alignment: .center)
+      drawText(copy.text("此记录未附现场照片"), in: CGRect(x: 42, y: photosY + 112, width: 511, height: 24), font: .systemFont(ofSize: 12), color: pdfMuted, alignment: .center)
       return
     }
 
@@ -314,7 +440,7 @@ import UIKit
         width: cellWidth,
         height: cellHeight
       )
-      drawPhoto(photo, in: cell)
+      drawPhoto(photo, copy: copy, in: cell)
     }
   }
 
@@ -330,13 +456,13 @@ import UIKit
     drawText(text, in: CGRect(x: x, y: y + 6, width: 98, height: 13), font: .boldSystemFont(ofSize: 8.5), color: color, alignment: .center)
   }
 
-  private func drawPhoto(_ photo: [String: Any], in rect: CGRect) {
-    UIColor(red: 0.94, green: 0.96, blue: 0.955, alpha: 1).setFill()
+  private func drawPhoto(_ photo: [String: Any], copy: ReportCopy, in rect: CGRect) {
+    pdfCanvas.setFill()
     UIBezierPath(roundedRect: rect, cornerRadius: 10).fill()
-    drawText(photo.string("phase"), in: CGRect(x: rect.minX + 9, y: rect.minY + 7, width: rect.width - 18, height: 16), font: .boldSystemFont(ofSize: 9), color: pdfMuted)
+    drawText(copy.text(photo.string("phase")), in: CGRect(x: rect.minX + 9, y: rect.minY + 7, width: rect.width - 18, height: 16), font: .boldSystemFont(ofSize: 9), color: pdfMuted)
     let frame = CGRect(x: rect.minX + 7, y: rect.minY + 28, width: rect.width - 14, height: rect.height - 35)
     guard let image = UIImage(contentsOfFile: photo.string("path")) else {
-      drawText("照片文件不可用", in: frame, font: .systemFont(ofSize: 10), color: pdfMuted, alignment: .center)
+      drawText(copy.text("照片文件不可用"), in: frame, font: .systemFont(ofSize: 10), color: pdfMuted, alignment: .center)
       return
     }
     let imageRect = aspectFit(image.size, inside: frame)
@@ -355,7 +481,7 @@ import UIKit
     }
     let start = CGPoint(x: rect.minX + number("x1") * rect.width, y: rect.minY + number("y1") * rect.height)
     let end = CGPoint(x: rect.minX + number("x2") * rect.width, y: rect.minY + number("y2") * rect.height)
-    let red = UIColor(red: 0.93, green: 0.08, blue: 0.08, alpha: 1)
+    let red = pdfAnnotation
     let path = UIBezierPath()
     path.lineWidth = 2.4
     red.setStroke()
@@ -384,47 +510,42 @@ import UIKit
     }
   }
 
-  private func drawSignoff(
+  private func drawNotesPage(
     project: [String: Any],
     issues: [[String: Any]],
+    copy: ReportCopy,
     pageBounds: CGRect
   ) {
-    let teal = UIColor(red: 0.043, green: 0.459, blue: 0.420, alpha: 1)
+    let teal = pdfBrand
     teal.setFill()
     UIRectFill(CGRect(x: 0, y: 0, width: pageBounds.width, height: 17))
-    drawText("补充说明与确认", in: CGRect(x: 42, y: 58, width: 511, height: 38), font: .boldSystemFont(ofSize: 26), color: pdfInk)
-    drawText("项目：\(project.string("name"))", in: CGRect(x: 42, y: 108, width: 511, height: 22), font: .systemFont(ofSize: 11, weight: .semibold), color: pdfMuted)
+    drawText(copy.text("补充说明"), in: CGRect(x: 42, y: 58, width: 511, height: 38), font: .boldSystemFont(ofSize: 26), color: pdfInk)
+    drawText(copy.projectLine(project.string("name")), in: CGRect(x: 42, y: 108, width: 511, height: 22), font: .systemFont(ofSize: 11, weight: .semibold), color: pdfMuted)
 
     let notesRect = CGRect(x: 42, y: 164, width: 511, height: 210)
-    UIColor(red: 0.955, green: 0.97, blue: 0.966, alpha: 1).setFill()
+    pdfSoftSurface.setFill()
     UIBezierPath(roundedRect: notesRect, cornerRadius: 12).fill()
-    drawText("补充说明", in: CGRect(x: 60, y: 184, width: 120, height: 22), font: .boldSystemFont(ofSize: 13), color: teal)
-    drawText(project.string("notes", fallback: "无"), in: CGRect(x: 60, y: 219, width: 475, height: 132), font: .systemFont(ofSize: 11), color: pdfInk)
+    drawText(copy.text("补充说明"), in: CGRect(x: 60, y: 184, width: 180, height: 22), font: .boldSystemFont(ofSize: 13), color: teal)
+    drawText(project.string("notes", fallback: copy.text("无")), in: CGRect(x: 60, y: 219, width: 475, height: 132), font: .systemFont(ofSize: 11), color: pdfInk)
 
-    let unfinished = issues.filter { $0.string("status") != "已完成" }.count
+    let unfinished = issues.filter {
+      let status = $0.string("status")
+      return status == "待处理" || status == "处理中"
+    }.count
     drawText(
-      "截至报告生成时，共记录 \(issues.count) 项问题，其中 \(unfinished) 项尚未完成整改。报告再次导出时会反映最新状态。",
+      copy.summary(total: issues.count, unfinished: unfinished),
       in: CGRect(x: 42, y: 411, width: 511, height: 52),
       font: .systemFont(ofSize: 10),
       color: pdfMuted
     )
 
-    drawSignature(title: "检查方签名", name: project.string("inspectorName"), rect: CGRect(x: 42, y: 520, width: 240, height: 150))
-    drawSignature(title: "业主/客户签名", name: project.string("clientName"), rect: CGRect(x: 313, y: 520, width: 240, height: 150))
-    drawText("确认日期：________年____月____日", in: CGRect(x: 42, y: 718, width: 511, height: 26), font: .systemFont(ofSize: 11), color: pdfMuted, alignment: .center)
-  }
-
-  private func drawSignature(title: String, name: String, rect: CGRect) {
-    UIColor(red: 0.97, green: 0.98, blue: 0.98, alpha: 1).setFill()
-    UIBezierPath(roundedRect: rect, cornerRadius: 12).fill()
-    drawText(title, in: CGRect(x: rect.minX + 16, y: rect.minY + 15, width: rect.width - 32, height: 20), font: .boldSystemFont(ofSize: 12), color: pdfInk)
-    drawText(name.isEmpty ? "" : "姓名：\(name)", in: CGRect(x: rect.minX + 16, y: rect.maxY - 39, width: rect.width - 32, height: 20), font: .systemFont(ofSize: 10), color: pdfMuted)
-    UIColor(red: 0.78, green: 0.82, blue: 0.81, alpha: 1).setStroke()
-    let line = UIBezierPath()
-    line.move(to: CGPoint(x: rect.minX + 16, y: rect.maxY - 48))
-    line.addLine(to: CGPoint(x: rect.maxX - 16, y: rect.maxY - 48))
-    line.lineWidth = 0.7
-    line.stroke()
+    drawText(
+      copy.text("内容仅用于现场沟通与情况记录，不构成专业鉴定、验收结论或法律意见。"),
+      in: CGRect(x: 42, y: 530, width: 511, height: 50),
+      font: .systemFont(ofSize: 10),
+      color: pdfMuted,
+      alignment: .center
+    )
   }
 
   private func aspectFit(_ imageSize: CGSize, inside rect: CGRect) -> CGRect {
@@ -441,17 +562,17 @@ import UIKit
 
   private func severityColor(_ value: String) -> UIColor {
     switch value {
-    case "高": return UIColor(red: 0.78, green: 0.23, blue: 0.23, alpha: 1)
-    case "中": return UIColor(red: 0.80, green: 0.42, blue: 0.13, alpha: 1)
-    default: return UIColor(red: 0.35, green: 0.46, blue: 0.44, alpha: 1)
+    case "高": return pdfRisk
+    case "中": return pdfPending
+    default: return pdfMuted
     }
   }
 
   private func statusColor(_ value: String) -> UIColor {
     switch value {
-    case "已完成": return UIColor(red: 0.14, green: 0.52, blue: 0.36, alpha: 1)
-    case "处理中": return UIColor(red: 0.17, green: 0.41, blue: 0.72, alpha: 1)
-    default: return UIColor(red: 0.80, green: 0.42, blue: 0.13, alpha: 1)
+    case "已完成": return pdfCompleted
+    case "处理中": return pdfInProgress
+    default: return pdfPending
     }
   }
 
@@ -477,9 +598,102 @@ import UIKit
   }
 }
 
+struct ReportCopy {
+  let isEnglish: Bool
+
+  init(languageCode: String) {
+    isEnglish = languageCode.lowercased().hasPrefix("en")
+  }
+
+  func text(_ chinese: String) -> String {
+    guard isEnglish else { return chinese }
+    return Self.english[chinese] ?? chinese
+  }
+
+  func reportTitle(_ projectName: String) -> String {
+    isEnglish ? "\(projectName) On-site Photo Records" : "\(projectName) 现场照片记录"
+  }
+
+  func footer(pageNumber: Int) -> String {
+    isEnglish
+      ? "For site communication and documentation only; not a professional assessment, acceptance decision, or legal opinion  ·  Page \(pageNumber)"
+      : "仅用于现场沟通与情况记录，不构成专业鉴定、验收结论或法律意见  ·  第 \(pageNumber) 页"
+  }
+
+  func severityPriority(_ severity: String) -> String {
+    isEnglish ? "\(text(severity)) priority" : "\(severity)优先级"
+  }
+
+  func projectLine(_ projectName: String) -> String {
+    isEnglish ? "Project: \(projectName)" : "项目：\(projectName)"
+  }
+
+  func summary(total: Int, unfinished: Int) -> String {
+    isEnglish
+      ? "At generation time, \(total) records were organized and \(unfinished) were marked unfinished. Generate again to reflect the latest content."
+      : "截至生成时，共整理 \(total) 条记录，其中 \(unfinished) 条标记为尚未完成处理。再次生成时会反映最新内容。"
+  }
+
+  private static let english: [String: String] = [
+    "缺少报告参数": "Missing report parameters",
+    "报告数据格式错误": "Invalid report data",
+    "找不到报告文件": "Report file not found",
+    "文件选择器正在使用": "The file picker is already in use",
+    "暂时无法打开文件选择器": "The file picker is temporarily unavailable",
+    "语言设置无效": "Invalid language setting",
+    "现场报告": "Site report",
+    "现场照片记录": "On-site Photo Records",
+    "现场情况记录": "Site condition records",
+    "现场照片沟通记录": "On-site Photo Communication Record",
+    "记录地点": "Location",
+    "记录日期": "Record date",
+    "记录人员": "Recorder",
+    "未填写": "Not provided",
+    "记录总数": "Total records",
+    "待处理": "Pending",
+    "处理中": "In progress",
+    "已完成": "Completed",
+    "高优先级": "High priority",
+    "记录范围": "Recorded areas",
+    "尚未记录区域": "No areas recorded",
+    "内容仅用于现场沟通与情况记录，不构成专业鉴定、验收结论或法律意见。":
+      "For site communication and documentation only. This is not a professional assessment, acceptance decision, or legal opinion.",
+    "补充照片": "Additional photos",
+    "未设置": "Not set",
+    "低": "Low",
+    "中": "Medium",
+    "高": "High",
+    "位置": "Location",
+    "负责人": "Assignee",
+    "处理期限": "Due date",
+    "照片说明": "Photo description",
+    "此记录未附现场照片": "No site photos attached to this record",
+    "处理前": "Before",
+    "处理后": "After",
+    "照片文件不可用": "Photo file unavailable",
+    "补充说明": "Additional notes",
+    "无": "None",
+  ]
+}
+
+private extension UIColor {
+  convenience init(photoReportHex hex: UInt32, alpha: CGFloat = 1) {
+    self.init(
+      red: CGFloat((hex >> 16) & 0xFF) / 255,
+      green: CGFloat((hex >> 8) & 0xFF) / 255,
+      blue: CGFloat(hex & 0xFF) / 255,
+      alpha: alpha
+    )
+  }
+}
+
 private extension Dictionary where Key == String, Value == Any {
   func string(_ key: String, fallback: String = "") -> String {
     let value = self[key] as? String ?? ""
     return value.isEmpty ? fallback : value
+  }
+
+  func bool(_ key: String) -> Bool {
+    self[key] as? Bool ?? false
   }
 }

@@ -4,6 +4,58 @@ import XCTest
 @testable import Runner
 
 final class RunnerTests: XCTestCase {
+  func testEnglishReportCopyUsesEnglishLabels() {
+    let copy = ReportCopy(languageCode: "en")
+    XCTAssertEqual(copy.text("现场照片记录"), "On-site Photo Records")
+    XCTAssertEqual(copy.severityPriority("高"), "High priority")
+    XCTAssertEqual(copy.projectLine("Sample Site"), "Project: Sample Site")
+  }
+
+  func testGeneratesEnglishReportText() throws {
+    let project: [String: Any] = [
+      "name": "Sample Site",
+      "address": "8 Market Street",
+      "inspectionDate": "2026-08-27",
+    ]
+    let issues: [[String: Any]] = [[
+      "code": "A-001",
+      "room": "Lobby",
+      "location": "East wall",
+      "category": "Wall crack",
+      "severity": "高",
+      "status": "待处理",
+      "description": "A visible crack requires follow-up.",
+      "photos": [],
+    ]]
+    let options: [String: Any] = [
+      "layout": "concise",
+      "includePosition": true,
+      "includeStatus": true,
+      "includeSeverity": true,
+      "includeAssignee": false,
+      "includeDueDate": false,
+      "includeProjectDetails": false,
+      "includeNotes": false,
+    ]
+
+    let reportURL = try AppDelegate().generateReport(
+      project: project,
+      issues: issues,
+      options: options,
+      copy: ReportCopy(languageCode: "en")
+    )
+    defer { try? FileManager.default.removeItem(at: reportURL) }
+
+    let document = try XCTUnwrap(PDFDocument(url: reportURL))
+    let text = (0..<document.pageCount)
+      .compactMap { document.page(at: $0)?.string }
+      .joined(separator: "\n")
+    XCTAssertTrue(text.contains("High priority"))
+    XCTAssertTrue(text.contains("Pending"))
+    XCTAssertTrue(text.contains("Photo description"))
+    XCTAssertTrue(text.contains("No site photos attached to this record"))
+  }
+
   func testGeneratesAnnotatedChineseReport() throws {
     let imageURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("photo-report-test.jpg")

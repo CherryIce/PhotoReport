@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 
 import '../../models.dart';
+import '../app_theme.dart';
 
 Future<Size> readImageSize(String path) async {
   final bytes = await File(path).readAsBytes();
@@ -23,7 +24,7 @@ class AnnotatedPhoto extends StatefulWidget {
   const AnnotatedPhoto({
     required this.path,
     required this.annotations,
-    this.backgroundColor = const Color(0xFF17201F),
+    this.backgroundColor = editorSurfaceColor,
     super.key,
   });
 
@@ -105,7 +106,7 @@ class AnnotationPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = const Color(0xFFFF2D2D)
+      ..color = annotationColor
       ..style = PaintingStyle.stroke
       ..strokeWidth = math.max(2.5, size.shortestSide * 0.009)
       ..strokeCap = StrokeCap.round
@@ -171,7 +172,7 @@ class AnnotationPainter extends CustomPainter {
     );
     canvas.drawRRect(
       RRect.fromRectAndRadius(rect, const Radius.circular(5)),
-      Paint()..color = const Color(0xD9D71920),
+      Paint()..color = annotationLabelColor,
     );
     painter.paint(canvas, point + const Offset(6, 4));
   }

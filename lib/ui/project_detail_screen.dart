@@ -3,7 +3,9 @@ import 'package:intl/intl.dart';
 
 import '../app_controller.dart';
 import '../models.dart';
+import '../report/report_service.dart';
 import 'app_theme.dart';
+import 'create_flow_logic.dart';
 import 'issue_form_screen.dart';
 import 'project_form_sheet.dart';
 import 'report_preview_screen.dart';
@@ -14,11 +16,15 @@ class ProjectDetailScreen extends StatefulWidget {
   const ProjectDetailScreen({
     required this.controller,
     required this.initialProject,
+    this.formalFlow = false,
+    this.autoStartIssue = false,
     super.key,
   });
 
   final PhotoReportController controller;
   final ProjectRecord initialProject;
+  final bool formalFlow;
+  final bool autoStartIssue;
 
   @override
   State<ProjectDetailScreen> createState() => _ProjectDetailScreenState();
@@ -32,12 +38,22 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   IssueStatus? statusFilter;
   String roomFilter = '全部区域';
   String searchText = '';
+  bool didAutoStartIssue = false;
+  late bool formalFlowActive;
 
   @override
   void initState() {
     super.initState();
     project = widget.initialProject;
-    refresh();
+    formalFlowActive = widget.formalFlow || project.formalFlowStep > 0;
+    _initialize();
+  }
+
+  Future<void> _initialize() async {
+    await refresh();
+    if (!mounted || !widget.autoStartIssue || didAutoStartIssue) return;
+    didAutoStartIssue = true;
+    await openIssue(entryMode: IssueEntryMode.formal);
   }
 
   Future<void> refresh() async {
@@ -84,7 +100,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      backgroundColor: canvasColor,
+      backgroundColor: context.appColors.canvas,
       showDragHandle: false,
       builder: (context) => ProjectFormSheet(project: project),
     );
@@ -97,24 +113,40 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     }
   }
 
-  Future<void> openIssue([IssueRecord? issue]) async {
+  Future<void> openIssue({
+    IssueRecord? issue,
+    IssueEntryMode? entryMode,
+  }) async {
     try {
       final sequence =
           issue?.sequence ??
           await widget.controller.nextIssueSequence(project.id);
       if (!mounted) return;
-      final changed = await Navigator.push<bool>(
+      final mode =
+          entryMode ??
+          (issue != null && hasFormalCoreFields(issue)
+              ? IssueEntryMode.formal
+              : formalFlowActive
+              ? IssueEntryMode.formal
+              : IssueEntryMode.quick);
+      final result = await Navigator.push<IssueFormResult>(
         context,
         MaterialPageRoute(
           builder: (context) => IssueFormScreen(
             controller: widget.controller,
             project: project,
             sequence: sequence,
+            existingIssues: issues,
             issue: issue,
+            entryMode: mode,
+            offerPostSaveActions: issue == null && mode == IssueEntryMode.quick,
           ),
         ),
       );
-      if (changed == true) await refresh();
+      if (result != null) await refresh();
+      if (mounted && result == IssueFormResult.savedAndAddAnother) {
+        await openIssue(entryMode: mode);
+      }
     } catch (caught) {
       if (mounted) showErrorSnackBar(context, caught);
     }
@@ -123,13 +155,57 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   Future<void> deleteIssue(IssueRecord issue) async {
     final confirmed = await confirmAction(
       context,
-      title: '删除问题 ${issue.code}？',
-      message: '对应的整改前后照片和全部标注也会从本机删除。',
+      title: '删除记录 ${issue.code}？',
+      message: '对应的前后照片和全部标注也会从本机删除。',
     );
     if (!confirmed || !mounted) return;
     try {
       await widget.controller.deleteIssue(issue.id);
       await refresh();
+    } catch (caught) {
+      if (mounted) showErrorSnackBar(context, caught);
+    }
+  }
+
+  Future<void> openReport() async {
+    final formal = formalFlowActive;
+    if (formal && project.formalFlowStep != 3) {
+      await widget.controller.setFormalFlowStep(project.id, 3);
+      project = project.copyWith(formalFlowStep: 3);
+    }
+    if (!mounted) return;
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ReportPreviewScreen(
+          controller: widget.controller,
+          project: project,
+          issues: issues,
+          initialLayout: formal ? ReportLayout.detailed : ReportLayout.concise,
+          reviewMode: formal,
+        ),
+      ),
+    );
+    if (!mounted) return;
+    final latest = widget.controller.projects
+        .where((overview) => overview.project.id == project.id)
+        .firstOrNull;
+    if (latest != null) {
+      setState(() {
+        project = latest.project;
+        formalFlowActive = latest.project.formalFlowStep > 0;
+      });
+    }
+  }
+
+  Future<void> useRecentReport({required bool share}) async {
+    try {
+      final service = const ReportService();
+      if (share) {
+        await service.share(project.lastReportPath);
+      } else {
+        await service.preview(project.lastReportPath);
+      }
     } catch (caught) {
       if (mounted) showErrorSnackBar(context, caught);
     }
@@ -146,13 +222,24 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     final completed = issues
         .where((issue) => issue.status == IssueStatus.completed)
         .length;
-    final rooms = issues.map((issue) => issue.room).toSet().toList()..sort();
+    final rooms =
+        issues
+            .map((issue) => issue.room.trim())
+            .where((room) => room.isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort();
     return Scaffold(
       appBar: AppBar(
-        title: Text(project.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+        title: LText(
+          project.name,
+          translate: false,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
         actions: [
           IconButton(
-            tooltip: '编辑项目',
+            tooltip: tr('编辑项目'),
             onPressed: editProject,
             icon: const Icon(Icons.edit_outlined),
           ),
@@ -173,80 +260,127 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          if (formalFlowActive) ...[
+                            _FormalFlowBanner(
+                              step: project.formalFlowStep == 3 ? 3 : 2,
+                              issueCount: issues.length,
+                            ),
+                            const SizedBox(height: 12),
+                          ],
                           _ProjectHeader(project: project),
                           const SizedBox(height: 14),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: MetricTile(
+                          LayoutBuilder(
+                            builder: (context, constraints) {
+                              final columns =
+                                  AppLocalizations.isEnglish() &&
+                                      constraints.maxWidth < 520
+                                  ? 2
+                                  : 4;
+                              final width =
+                                  (constraints.maxWidth - (columns - 1) * 8) /
+                                  columns;
+                              final metrics = [
+                                (
                                   value: issues.length,
                                   label: '全部',
-                                  color: inkColor,
-                                  compact: true,
+                                  color: context.appColors.ink,
                                 ),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: MetricTile(
+                                (
                                   value: pending,
-                                  label: '待整改',
-                                  color: const Color(0xFFCC6B22),
-                                  compact: true,
+                                  label: '待处理',
+                                  color: context.appColors.pending,
                                 ),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: MetricTile(
+                                (
                                   value: inProgress,
                                   label: '处理中',
-                                  color: const Color(0xFF2C69B8),
-                                  compact: true,
+                                  color: context.appColors.inProgress,
                                 ),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: MetricTile(
+                                (
                                   value: completed,
                                   label: '已完成',
-                                  color: const Color(0xFF23855C),
-                                  compact: true,
+                                  color: context.appColors.completed,
                                 ),
-                              ),
-                            ],
+                              ];
+                              return Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  for (final metric in metrics)
+                                    SizedBox(
+                                      width: width,
+                                      child: MetricTile(
+                                        value: metric.value,
+                                        label: metric.label,
+                                        color: metric.color,
+                                        compact: true,
+                                      ),
+                                    ),
+                                ],
+                              );
+                            },
                           ),
                           const SizedBox(height: 14),
                           SizedBox(
                             width: double.infinity,
                             child: FilledButton.icon(
-                              onPressed: issues.isEmpty
-                                  ? null
-                                  : () => Navigator.push<void>(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (context) =>
-                                            ReportPreviewScreen(
-                                              project: project,
-                                              issues: issues,
-                                            ),
-                                      ),
-                                    ),
+                              onPressed: issues.isEmpty ? null : openReport,
                               icon: const Icon(Icons.picture_as_pdf_outlined),
-                              label: Text(
-                                issues.isEmpty ? '记录问题后可生成报告' : '生成正式 PDF 报告',
+                              label: LText(
+                                issues.isEmpty
+                                    ? '添加记录后可整理分享'
+                                    : formalFlowActive
+                                    ? '步骤 3：整理复核'
+                                    : '整理并生成 PDF',
                               ),
                             ),
                           ),
+                          if (project.lastReportPath.isNotEmpty) ...[
+                            const SizedBox(height: 10),
+                            Card(
+                              child: ListTile(
+                                leading: Icon(
+                                  Icons.history_rounded,
+                                  color: context.appColors.brand,
+                                ),
+                                title: const LText('最近生成的沟通记录'),
+                                subtitle: LText(
+                                  project.lastReportAt == null
+                                      ? '可直接再次预览或分享'
+                                      : '${DateFormat('yyyy-MM-dd HH:mm').format(project.lastReportAt!)} 生成',
+                                ),
+                                trailing: Wrap(
+                                  spacing: 2,
+                                  children: [
+                                    IconButton(
+                                      tooltip: tr('预览最近 PDF'),
+                                      onPressed: () =>
+                                          useRecentReport(share: false),
+                                      icon: const Icon(
+                                        Icons.visibility_outlined,
+                                      ),
+                                    ),
+                                    IconButton(
+                                      tooltip: tr('再次分享'),
+                                      onPressed: () =>
+                                          useRecentReport(share: true),
+                                      icon: const Icon(Icons.ios_share_rounded),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
                           const SizedBox(height: 24),
                           const SectionHeader(
-                            title: '问题清单',
-                            subtitle: '按编号追踪，每项都能回到具体位置与整改证据。',
+                            title: '照片记录',
+                            subtitle: '按编号整理，每项都能回到具体位置与前后照片。',
                           ),
                           const SizedBox(height: 12),
                           TextField(
                             onChanged: (value) =>
                                 setState(() => searchText = value),
-                            decoration: const InputDecoration(
-                              hintText: '搜索编号、房间、问题或负责人',
+                            decoration: InputDecoration(
+                              hintText: tr('搜索编号、区域、标题或负责人'),
                               prefixIcon: Icon(Icons.search_rounded),
                               isDense: true,
                             ),
@@ -257,7 +391,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                             child: Row(
                               children: [
                                 ChoiceChip(
-                                  label: const Text('全部状态'),
+                                  label: const LText('全部状态'),
                                   selected: statusFilter == null,
                                   onSelected: (_) =>
                                       setState(() => statusFilter = null),
@@ -265,7 +399,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                                 const SizedBox(width: 7),
                                 for (final status in IssueStatus.values) ...[
                                   ChoiceChip(
-                                    label: Text(status.label),
+                                    label: LText(status.label),
                                     selected: statusFilter == status,
                                     onSelected: (_) => setState(
                                       () =>
@@ -287,7 +421,10 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                                 children: [
                                   for (final room in ['全部区域', ...rooms]) ...[
                                     FilterChip(
-                                      label: Text(room),
+                                      label: LText(
+                                        room,
+                                        translate: room == '全部区域',
+                                      ),
                                       selected: roomFilter == room,
                                       onSelected: (_) =>
                                           setState(() => roomFilter = room),
@@ -306,23 +443,29 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                   if (issues.isEmpty)
                     SliverFillRemaining(
                       hasScrollBody: false,
-                      child: _EmptyIssues(onCreate: openIssue),
+                      child: _EmptyIssues(
+                        onCreate: () => openIssue(
+                          entryMode: formalFlowActive
+                              ? IssueEntryMode.formal
+                              : IssueEntryMode.quick,
+                        ),
+                      ),
                     )
                   else if (filteredIssues.isEmpty)
-                    const SliverToBoxAdapter(
+                    SliverToBoxAdapter(
                       child: Padding(
-                        padding: EdgeInsets.all(34),
+                        padding: const EdgeInsets.all(34),
                         child: Column(
                           children: [
                             Icon(
                               Icons.filter_alt_off_outlined,
-                              color: mutedColor,
+                              color: context.appColors.muted,
                               size: 38,
                             ),
                             SizedBox(height: 10),
-                            Text(
-                              '当前筛选下没有问题',
-                              style: TextStyle(color: mutedColor),
+                            LText(
+                              '当前筛选下没有记录',
+                              style: TextStyle(color: context.appColors.muted),
                             ),
                           ],
                         ),
@@ -338,7 +481,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                           final issue = filteredIssues[index];
                           return _IssueCard(
                             issue: issue,
-                            onOpen: () => openIssue(issue),
+                            onOpen: () => openIssue(issue: issue),
                             onDelete: () => deleteIssue(issue),
                           );
                         },
@@ -350,10 +493,79 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       floatingActionButton: loading || error != null
           ? null
           : FloatingActionButton.extended(
-              onPressed: openIssue,
+              onPressed: () => openIssue(
+                entryMode: formalFlowActive
+                    ? IssueEntryMode.formal
+                    : IssueEntryMode.quick,
+              ),
               icon: const Icon(Icons.add_a_photo_outlined),
-              label: const Text('记录问题'),
+              label: LText(formalFlowActive ? '添加记录' : '快速记录'),
             ),
+    );
+  }
+}
+
+class _FormalFlowBanner extends StatelessWidget {
+  const _FormalFlowBanner({required this.step, required this.issueCount});
+
+  final int step;
+  final int issueCount;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(15),
+      decoration: BoxDecoration(
+        color: context.appColors.brand.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: context.appColors.brand,
+              borderRadius: BorderRadius.circular(13),
+            ),
+            child: LText(
+              '$step/3',
+              style: TextStyle(
+                color: context.appColors.onBrand,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                LText(
+                  step == 3 ? '整理复核' : '添加现场记录',
+                  style: TextStyle(
+                    color: context.appColors.ink,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                LText(
+                  step == 3
+                      ? '检查缺失项后生成完整记录。'
+                      : issueCount == 0
+                      ? '先添加第一条记录，可随时暂存退出。'
+                      : '已添加 $issueCount 条，可继续添加或进入整理复核。',
+                  style: TextStyle(
+                    color: context.appColors.muted,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -373,17 +585,18 @@ class _ProjectHeader extends StatelessWidget {
           children: [
             Row(
               children: [
-                const Icon(
+                Icon(
                   Icons.location_on_outlined,
-                  color: brandColor,
+                  color: context.appColors.brand,
                   size: 20,
                 ),
                 const SizedBox(width: 7),
                 Expanded(
-                  child: Text(
-                    project.address,
-                    style: const TextStyle(
-                      color: inkColor,
+                  child: LText(
+                    project.address.isEmpty ? '地点待补充' : project.address,
+                    translate: project.address.isEmpty,
+                    style: TextStyle(
+                      color: context.appColors.ink,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -402,7 +615,7 @@ class _ProjectHeader extends StatelessWidget {
                 if (project.inspectorName.isNotEmpty)
                   _Meta(
                     icon: Icons.badge_outlined,
-                    text: '检查人：${project.inspectorName}',
+                    text: '记录人：${project.inspectorName}',
                   ),
                 if (project.clientName.isNotEmpty)
                   _Meta(
@@ -429,9 +642,12 @@ class _Meta extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, size: 16, color: mutedColor),
+        Icon(icon, size: 16, color: context.appColors.muted),
         const SizedBox(width: 5),
-        Text(text, style: const TextStyle(color: mutedColor, fontSize: 12)),
+        LText(
+          text,
+          style: TextStyle(color: context.appColors.muted, fontSize: 12),
+        ),
       ],
     );
   }
@@ -472,10 +688,10 @@ class _IssueCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(12),
                   child: before == null
                       ? Container(
-                          color: const Color(0xFFEAF0EE),
-                          child: const Icon(
+                          color: context.appColors.softSurface,
+                          child: Icon(
                             Icons.image_not_supported_outlined,
-                            color: mutedColor,
+                            color: context.appColors.muted,
                           ),
                         )
                       : AnnotatedPhoto(
@@ -497,67 +713,81 @@ class _IssueCard extends StatelessWidget {
                             vertical: 5,
                           ),
                           decoration: BoxDecoration(
-                            color: inkColor,
+                            color: context.appColors.ink,
                             borderRadius: BorderRadius.circular(8),
                           ),
-                          child: Text(
+                          child: LText(
                             issue.code,
-                            style: const TextStyle(
-                              color: Colors.white,
+                            translate: false,
+                            style: TextStyle(
+                              color: context.appColors.canvas,
                               fontSize: 12,
                               fontWeight: FontWeight.w800,
                             ),
                           ),
                         ),
                         const SizedBox(width: 7),
-                        SeverityBadge(severity: issue.severity),
-                        const Spacer(),
+                        Flexible(
+                          child: SeverityBadge(severity: issue.severity),
+                        ),
+                        const SizedBox(width: 2),
                         PopupMenuButton<String>(
                           padding: EdgeInsets.zero,
-                          tooltip: '问题操作',
+                          tooltip: tr('记录操作'),
                           onSelected: (value) {
                             if (value == 'edit') onOpen();
                             if (value == 'delete') onDelete();
                           },
                           itemBuilder: (context) => const [
-                            PopupMenuItem(value: 'edit', child: Text('编辑问题')),
-                            PopupMenuItem(value: 'delete', child: Text('删除问题')),
+                            PopupMenuItem(value: 'edit', child: LText('编辑记录')),
+                            PopupMenuItem(
+                              value: 'delete',
+                              child: LText('删除记录'),
+                            ),
                           ],
                         ),
                       ],
                     ),
                     const SizedBox(height: 8),
-                    Text(
-                      issue.category,
+                    LText(
+                      issue.category.isEmpty ? '图文记录' : issue.category,
+                      translate: issue.category.isEmpty,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: inkColor,
+                      style: TextStyle(
+                        color: context.appColors.ink,
                         fontWeight: FontWeight.w800,
                       ),
                     ),
                     const SizedBox(height: 3),
-                    Text(
-                      '${issue.room} / ${issue.location}',
+                    LText(
+                      issueLocationLabel(issue),
+                      translate:
+                          issue.room.trim().isEmpty &&
+                          issue.location.trim().isEmpty,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: mutedColor, fontSize: 12),
+                      style: TextStyle(
+                        color: context.appColors.muted,
+                        fontSize: 12,
+                      ),
                     ),
                     const SizedBox(height: 7),
-                    Row(
+                    Wrap(
+                      spacing: 7,
+                      runSpacing: 5,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         StatusBadge(status: issue.status),
-                        if (afterCount > 0) ...[
-                          const SizedBox(width: 7),
-                          Text(
-                            '$afterCount 张整改后',
-                            style: const TextStyle(
-                              color: Color(0xFF23855C),
+                        if (afterCount > 0)
+                          LText(
+                            '$afterCount 张处理后',
+                            style: TextStyle(
+                              color: context.appColors.completed,
                               fontSize: 11,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
-                        ],
                       ],
                     ),
                   ],
@@ -583,31 +813,31 @@ class _EmptyIssues extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(
+          Icon(
             Icons.add_photo_alternate_outlined,
-            color: brandColor,
+            color: context.appColors.brand,
             size: 48,
           ),
           const SizedBox(height: 14),
-          const Text(
-            '还没有现场问题',
+          LText(
+            '还没有现场记录',
             style: TextStyle(
-              color: inkColor,
+              color: context.appColors.ink,
               fontWeight: FontWeight.w800,
               fontSize: 17,
             ),
           ),
           const SizedBox(height: 7),
-          const Text(
-            '发现问题时立即记录位置、照片与整改责任。',
+          LText(
+            '拍照、写下位置与说明，需要时再补充负责人和期限。',
             textAlign: TextAlign.center,
-            style: TextStyle(color: mutedColor),
+            style: TextStyle(color: context.appColors.muted),
           ),
           const SizedBox(height: 16),
           OutlinedButton.icon(
             onPressed: onCreate,
             icon: const Icon(Icons.add_rounded),
-            label: const Text('记录第一个问题'),
+            label: const LText('添加第一条记录'),
           ),
         ],
       ),
@@ -629,15 +859,15 @@ class _LoadError extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(
+            Icon(
               Icons.error_outline_rounded,
               size: 42,
-              color: mutedColor,
+              color: context.appColors.muted,
             ),
             const SizedBox(height: 12),
-            Text('读取问题清单失败：$error', textAlign: TextAlign.center),
+            LText('读取照片记录失败：$error', textAlign: TextAlign.center),
             const SizedBox(height: 12),
-            OutlinedButton(onPressed: onRetry, child: const Text('重新载入')),
+            OutlinedButton(onPressed: onRetry, child: const LText('重新载入')),
           ],
         ),
       ),

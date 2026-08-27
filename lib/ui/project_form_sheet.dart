@@ -6,9 +6,16 @@ import '../models.dart';
 import 'app_theme.dart';
 
 class ProjectFormSheet extends StatefulWidget {
-  const ProjectFormSheet({this.project, super.key});
+  const ProjectFormSheet({
+    this.project,
+    this.suggestedNames = const [],
+    this.formalFlow = false,
+    super.key,
+  });
 
   final ProjectRecord? project;
+  final List<String> suggestedNames;
+  final bool formalFlow;
 
   @override
   State<ProjectFormSheet> createState() => _ProjectFormSheetState();
@@ -71,6 +78,9 @@ class _ProjectFormSheetState extends State<ProjectFormSheet> {
         notes: notesController.text.trim(),
         createdAt: original?.createdAt ?? now,
         updatedAt: now,
+        lastReportPath: original?.lastReportPath ?? '',
+        lastReportAt: original?.lastReportAt,
+        formalFlowStep: original?.formalFlowStep ?? (widget.formalFlow ? 2 : 0),
       ),
     );
   }
@@ -93,44 +103,59 @@ class _ProjectFormSheetState extends State<ProjectFormSheet> {
                     width: 38,
                     height: 4,
                     decoration: BoxDecoration(
-                      color: lineColor,
+                      color: context.appColors.line,
                       borderRadius: BorderRadius.circular(99),
                     ),
                   ),
                 ),
                 const SizedBox(height: 18),
-                Text(
-                  widget.project == null ? '新建检查项目' : '编辑项目信息',
+                LText(
+                  widget.project == null
+                      ? widget.formalFlow
+                            ? '步骤 1/3 · 项目资料'
+                            : '新建记录项目'
+                      : '编辑项目信息',
                   style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                     fontWeight: FontWeight.w800,
-                    color: inkColor,
+                    color: context.appColors.ink,
                   ),
                 ),
                 const SizedBox(height: 6),
-                const Text(
-                  '项目资料会出现在正式报告封面与签名页。',
-                  style: TextStyle(color: mutedColor),
+                LText(
+                  widget.formalFlow
+                      ? '先确认项目基本资料，保存后继续添加现场记录。'
+                      : '先填写名称和地点，其余资料可按实际沟通需要补充。',
+                  style: TextStyle(color: context.appColors.muted),
                 ),
                 const SizedBox(height: 22),
                 TextFormField(
                   controller: nameController,
-                  decoration: const InputDecoration(
-                    labelText: '项目名称 *',
-                    hintText: '例如：云栖花园 8-1202 验收',
+                  decoration: InputDecoration(
+                    labelText: tr('项目名称 *'),
+                    hintText: tr('例如：云栖花园 8-1202 现场记录'),
                   ),
-                  validator: (value) =>
-                      value == null || value.trim().isEmpty ? '请输入项目名称' : null,
+                  validator: (value) => value == null || value.trim().isEmpty
+                      ? tr('请输入项目名称')
+                      : null,
                   textInputAction: TextInputAction.next,
                 ),
+                if (widget.suggestedNames.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  _ProjectNameSuggestions(
+                    names: widget.suggestedNames,
+                    onSelected: (value) => nameController.text = value,
+                  ),
+                ],
                 const SizedBox(height: 12),
                 TextFormField(
                   controller: addressController,
-                  decoration: const InputDecoration(
-                    labelText: '项目地址 *',
-                    hintText: '楼盘、楼栋及房号',
+                  decoration: InputDecoration(
+                    labelText: tr('项目地址 *'),
+                    hintText: tr('楼盘、楼栋及房号'),
                   ),
-                  validator: (value) =>
-                      value == null || value.trim().isEmpty ? '请输入项目地址' : null,
+                  validator: (value) => value == null || value.trim().isEmpty
+                      ? tr('请输入项目地址')
+                      : null,
                   textInputAction: TextInputAction.next,
                 ),
                 const SizedBox(height: 12),
@@ -146,60 +171,51 @@ class _ProjectFormSheetState extends State<ProjectFormSheet> {
                     if (picked != null) setState(() => inspectionDate = picked);
                   },
                   child: InputDecorator(
-                    decoration: const InputDecoration(
-                      labelText: '检查日期',
+                    decoration: InputDecoration(
+                      labelText: tr('记录日期'),
                       suffixIcon: Icon(Icons.calendar_today_outlined, size: 20),
                     ),
-                    child: Text(
+                    child: LText(
                       DateFormat('yyyy-MM-dd').format(inspectionDate),
+                      translate: false,
                     ),
                   ),
                 ),
                 const SizedBox(height: 12),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                ResponsiveFieldRow(
                   children: [
-                    Expanded(
-                      child: TextFormField(
-                        controller: companyController,
-                        decoration: const InputDecoration(labelText: '企业/团队名称'),
-                        textInputAction: TextInputAction.next,
-                      ),
+                    TextFormField(
+                      controller: companyController,
+                      decoration: InputDecoration(labelText: tr('企业/团队名称')),
+                      textInputAction: TextInputAction.next,
                     ),
-                    const SizedBox(width: 12),
-                    SizedBox(
-                      width: 104,
-                      child: TextFormField(
-                        controller: prefixController,
-                        maxLength: 4,
-                        textCapitalization: TextCapitalization.characters,
-                        decoration: const InputDecoration(
-                          labelText: '编号前缀',
-                          counterText: '',
-                        ),
-                        validator: (value) =>
-                            value == null || value.trim().isEmpty ? '必填' : null,
+                    TextFormField(
+                      controller: prefixController,
+                      maxLength: 4,
+                      textCapitalization: TextCapitalization.characters,
+                      decoration: InputDecoration(
+                        labelText: tr('编号前缀'),
+                        counterText: '',
                       ),
+                      validator: (value) =>
+                          value == null || value.trim().isEmpty
+                          ? tr('必填')
+                          : null,
                     ),
                   ],
                 ),
                 const SizedBox(height: 12),
-                Row(
+                ResponsiveFieldRow(
                   children: [
-                    Expanded(
-                      child: TextFormField(
-                        controller: inspectorController,
-                        decoration: const InputDecoration(labelText: '检查人'),
-                        textInputAction: TextInputAction.next,
-                      ),
+                    TextFormField(
+                      controller: inspectorController,
+                      decoration: InputDecoration(labelText: tr('记录人')),
+                      textInputAction: TextInputAction.next,
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: TextFormField(
-                        controller: clientController,
-                        decoration: const InputDecoration(labelText: '业主/客户'),
-                        textInputAction: TextInputAction.next,
-                      ),
+                    TextFormField(
+                      controller: clientController,
+                      decoration: InputDecoration(labelText: tr('业主/客户')),
+                      textInputAction: TextInputAction.next,
                     ),
                   ],
                 ),
@@ -208,21 +224,60 @@ class _ProjectFormSheetState extends State<ProjectFormSheet> {
                   controller: notesController,
                   minLines: 2,
                   maxLines: 4,
-                  decoration: const InputDecoration(
-                    labelText: '补充说明',
-                    hintText: '检查范围、交接约定或其他备注',
+                  decoration: InputDecoration(
+                    labelText: tr('补充说明'),
+                    hintText: tr('沟通范围、背景或其他备注'),
                   ),
                 ),
                 const SizedBox(height: 22),
                 FilledButton.icon(
                   onPressed: submit,
                   icon: const Icon(Icons.check_rounded),
-                  label: Text(widget.project == null ? '创建项目' : '保存修改'),
+                  label: LText(
+                    widget.project == null
+                        ? widget.formalFlow
+                              ? '保存并继续'
+                              : '创建项目'
+                        : '保存修改',
+                  ),
                 ),
               ],
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _ProjectNameSuggestions extends StatelessWidget {
+  const _ProjectNameSuggestions({
+    required this.names,
+    required this.onSelected,
+  });
+
+  final List<String> names;
+  final ValueChanged<String> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          LText(
+            '复用标题',
+            style: TextStyle(color: context.appColors.muted, fontSize: 12),
+          ),
+          const SizedBox(width: 8),
+          for (final name in names.take(5)) ...[
+            ActionChip(
+              label: LText(name, translate: false),
+              onPressed: () => onSelected(name),
+            ),
+            const SizedBox(width: 7),
+          ],
+        ],
       ),
     );
   }

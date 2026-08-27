@@ -1,16 +1,22 @@
 import 'package:flutter/foundation.dart';
 
+import 'data/backup_service.dart';
 import 'data/app_database.dart';
 import 'data/photo_storage.dart';
 import 'models.dart';
 
 class PhotoReportController extends ChangeNotifier {
-  PhotoReportController({AppDatabase? database, PhotoStorage? photoStorage})
-    : database = database ?? AppDatabase.instance,
-      photoStorage = photoStorage ?? const PhotoStorage();
+  PhotoReportController({
+    AppDatabase? database,
+    PhotoStorage? photoStorage,
+    BackupService? backupService,
+  }) : database = database ?? AppDatabase.instance,
+       photoStorage = photoStorage ?? const PhotoStorage(),
+       backupService = backupService ?? BackupService();
 
   final AppDatabase database;
   final PhotoStorage photoStorage;
+  final BackupService backupService;
 
   bool isLoading = true;
   Object? loadError;
@@ -38,6 +44,11 @@ class PhotoReportController extends ChangeNotifier {
     await refreshProjects();
   }
 
+  Future<void> setFormalFlowStep(String projectId, int step) async {
+    await database.setFormalFlowStep(projectId, step);
+    await refreshProjects();
+  }
+
   Future<void> deleteProject(String id) async {
     final paths = await database.deleteProject(id);
     await photoStorage.deletePaths(paths);
@@ -61,6 +72,35 @@ class PhotoReportController extends ChangeNotifier {
   Future<void> deleteIssue(String id) async {
     final paths = await database.deleteIssue(id);
     await photoStorage.deletePaths(paths);
+    await refreshProjects();
+  }
+
+  Future<void> rememberReport(
+    String projectId,
+    String path,
+    DateTime generatedAt,
+  ) async {
+    final previous = await database.rememberReport(
+      projectId,
+      path,
+      generatedAt,
+    );
+    if (previous.isNotEmpty && previous != path) {
+      try {
+        await photoStorage.deletePaths([previous]);
+      } catch (_) {
+        // 新报告已成功记录；旧孤立 PDF 清理失败不影响本次生成结果。
+      }
+    }
+    await refreshProjects();
+  }
+
+  Future<String> createBackup() {
+    return backupService.create(database);
+  }
+
+  Future<void> restoreBackup(String path) async {
+    await backupService.restore(path, database, photoStorage);
     await refreshProjects();
   }
 }

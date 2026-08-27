@@ -1,8 +1,8 @@
 import 'dart:convert';
 
-enum IssueSeverity { low, medium, high }
+enum IssueSeverity { unspecified, low, medium, high }
 
-enum IssueStatus { pending, inProgress, completed }
+enum IssueStatus { unspecified, pending, inProgress, completed }
 
 enum PhotoPhase { before, after }
 
@@ -10,6 +10,7 @@ enum AnnotationKind { rectangle, arrow, text }
 
 extension IssueSeverityLabel on IssueSeverity {
   String get label => switch (this) {
+    IssueSeverity.unspecified => '未设置',
     IssueSeverity.low => '低',
     IssueSeverity.medium => '中',
     IssueSeverity.high => '高',
@@ -18,14 +19,15 @@ extension IssueSeverityLabel on IssueSeverity {
 
 extension IssueStatusLabel on IssueStatus {
   String get label => switch (this) {
-    IssueStatus.pending => '待整改',
+    IssueStatus.unspecified => '未设置',
+    IssueStatus.pending => '待处理',
     IssueStatus.inProgress => '处理中',
     IssueStatus.completed => '已完成',
   };
 }
 
 extension PhotoPhaseLabel on PhotoPhase {
-  String get label => this == PhotoPhase.before ? '整改前' : '整改后';
+  String get label => this == PhotoPhase.before ? '处理前' : '处理后';
 }
 
 class PhotoAnnotation {
@@ -252,6 +254,9 @@ class ProjectRecord {
     required this.notes,
     required this.createdAt,
     required this.updatedAt,
+    this.lastReportPath = '',
+    this.lastReportAt,
+    this.formalFlowStep = 0,
   });
 
   final String id;
@@ -265,6 +270,46 @@ class ProjectRecord {
   final String notes;
   final DateTime createdAt;
   final DateTime updatedAt;
+  final String lastReportPath;
+  final DateTime? lastReportAt;
+
+  /// 0 means no unfinished formal flow; 2 and 3 resume those formal steps.
+  final int formalFlowStep;
+
+  ProjectRecord copyWith({
+    String? name,
+    String? address,
+    String? companyName,
+    String? inspectorName,
+    String? clientName,
+    String? codePrefix,
+    DateTime? inspectionDate,
+    String? notes,
+    DateTime? updatedAt,
+    String? lastReportPath,
+    DateTime? lastReportAt,
+    bool clearLastReport = false,
+    int? formalFlowStep,
+  }) {
+    return ProjectRecord(
+      id: id,
+      name: name ?? this.name,
+      address: address ?? this.address,
+      companyName: companyName ?? this.companyName,
+      inspectorName: inspectorName ?? this.inspectorName,
+      clientName: clientName ?? this.clientName,
+      codePrefix: codePrefix ?? this.codePrefix,
+      inspectionDate: inspectionDate ?? this.inspectionDate,
+      notes: notes ?? this.notes,
+      createdAt: createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      lastReportPath: clearLastReport
+          ? ''
+          : lastReportPath ?? this.lastReportPath,
+      lastReportAt: clearLastReport ? null : lastReportAt ?? this.lastReportAt,
+      formalFlowStep: formalFlowStep ?? this.formalFlowStep,
+    );
+  }
 
   Map<String, Object?> toMap() => {
     'id': id,
@@ -278,6 +323,9 @@ class ProjectRecord {
     'notes': notes,
     'created_at': createdAt.millisecondsSinceEpoch,
     'updated_at': updatedAt.millisecondsSinceEpoch,
+    'last_report_path': lastReportPath,
+    'last_report_at': lastReportAt?.millisecondsSinceEpoch,
+    'formal_flow_step': formalFlowStep,
   };
 
   factory ProjectRecord.fromMap(Map<String, Object?> map) {
@@ -295,6 +343,11 @@ class ProjectRecord {
       notes: map['notes']! as String,
       createdAt: DateTime.fromMillisecondsSinceEpoch(map['created_at']! as int),
       updatedAt: DateTime.fromMillisecondsSinceEpoch(map['updated_at']! as int),
+      lastReportPath: map['last_report_path'] as String? ?? '',
+      lastReportAt: map['last_report_at'] == null
+          ? null
+          : DateTime.fromMillisecondsSinceEpoch(map['last_report_at']! as int),
+      formalFlowStep: (map['formal_flow_step'] as num?)?.toInt() ?? 0,
     );
   }
 }

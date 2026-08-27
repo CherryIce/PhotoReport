@@ -9,22 +9,33 @@ import '../app_controller.dart';
 import '../models.dart';
 import 'annotation_editor_screen.dart';
 import 'app_theme.dart';
+import 'create_flow_logic.dart';
 import 'widgets/annotated_photo.dart';
 import 'widgets/common.dart';
+
+enum IssueEntryMode { quick, formal }
+
+enum IssueFormResult { saved, savedAndAddAnother, savedAndOpenProject }
 
 class IssueFormScreen extends StatefulWidget {
   const IssueFormScreen({
     required this.controller,
     required this.project,
     required this.sequence,
+    this.existingIssues = const [],
     this.issue,
+    this.entryMode = IssueEntryMode.quick,
+    this.offerPostSaveActions = false,
     super.key,
   });
 
   final PhotoReportController controller;
   final ProjectRecord project;
   final int sequence;
+  final List<IssueRecord> existingIssues;
   final IssueRecord? issue;
+  final IssueEntryMode entryMode;
+  final bool offerPostSaveActions;
 
   @override
   State<IssueFormScreen> createState() => _IssueFormScreenState();
@@ -33,6 +44,7 @@ class IssueFormScreen extends StatefulWidget {
 class _IssueFormScreenState extends State<IssueFormScreen> {
   final formKey = GlobalKey<FormState>();
   final picker = ImagePicker();
+  final descriptionFocusNode = FocusNode();
   late final String issueId;
   late final TextEditingController roomController;
   late final TextEditingController locationController;
@@ -46,6 +58,10 @@ class _IssueFormScreenState extends State<IssueFormScreen> {
   final Set<String> newPaths = {};
   bool committed = false;
   bool saving = false;
+  bool allowPop = false;
+  late bool showAdvanced;
+  late bool showOptionalDetails;
+  late IssueEntryMode activeMode;
 
   String get issueCode =>
       widget.issue?.code ??
@@ -62,11 +78,23 @@ class _IssueFormScreenState extends State<IssueFormScreen> {
     descriptionController = TextEditingController(
       text: issue?.description ?? '',
     );
-    assigneeController = TextEditingController(text: issue?.assignee ?? '施工方');
-    severity = issue?.severity ?? IssueSeverity.medium;
-    status = issue?.status ?? IssueStatus.pending;
+    assigneeController = TextEditingController(text: issue?.assignee ?? '');
+    severity = issue?.severity ?? IssueSeverity.unspecified;
+    status = issue?.status ?? IssueStatus.unspecified;
     dueDate = issue?.dueDate;
     photos = [...?issue?.photos];
+    activeMode = issue != null && hasFormalCoreFields(issue)
+        ? IssueEntryMode.formal
+        : widget.entryMode;
+    showOptionalDetails =
+        activeMode == IssueEntryMode.formal ||
+        (issue != null && (issue.room.isNotEmpty || issue.location.isNotEmpty));
+    showAdvanced =
+        issue != null &&
+        (issue.assignee.isNotEmpty ||
+            issue.dueDate != null ||
+            issue.severity != IssueSeverity.unspecified ||
+            issue.status != IssueStatus.unspecified);
   }
 
   @override
@@ -76,6 +104,7 @@ class _IssueFormScreenState extends State<IssueFormScreen> {
     categoryController.dispose();
     descriptionController.dispose();
     assigneeController.dispose();
+    descriptionFocusNode.dispose();
     if (!committed && newPaths.isNotEmpty) {
       unawaited(widget.controller.photoStorage.deletePaths(newPaths));
     }
@@ -93,14 +122,14 @@ class _IssueFormScreenState extends State<IssueFormScreen> {
             children: [
               ListTile(
                 leading: const Icon(Icons.camera_alt_outlined),
-                title: const Text('现场拍照'),
-                subtitle: const Text('打开相机拍摄一张照片'),
+                title: const LText('现场拍照'),
+                subtitle: const LText('打开相机拍摄一张照片'),
                 onTap: () => Navigator.pop(context, ImageSource.camera),
               ),
               ListTile(
                 leading: const Icon(Icons.photo_library_outlined),
-                title: const Text('从相册选择'),
-                subtitle: const Text('导入已有的现场照片'),
+                title: const LText('从相册选择'),
+                subtitle: const LText('导入已有的现场照片'),
                 onTap: () => Navigator.pop(context, ImageSource.gallery),
               ),
             ],
@@ -120,7 +149,10 @@ class _IssueFormScreenState extends State<IssueFormScreen> {
         picked.path,
       );
       newPaths.add(imported);
-      if (!mounted) return;
+      if (!mounted) {
+        await widget.controller.photoStorage.deletePaths([imported]);
+        return;
+      }
       setState(() {
         photos.add(
           PhotoRecord(
@@ -132,6 +164,9 @@ class _IssueFormScreenState extends State<IssueFormScreen> {
           ),
         );
       });
+      if (activeMode == IssueEntryMode.quick) {
+        descriptionFocusNode.requestFocus();
+      }
     } catch (error) {
       if (mounted) showErrorSnackBar(context, error);
     }
@@ -158,6 +193,12 @@ class _IssueFormScreenState extends State<IssueFormScreen> {
 
   Future<void> save() async {
     if (!formKey.currentState!.validate() || saving) return;
+    if (widget.issue == null && photos.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: LText('请至少添加一张现场照片')));
+      return;
+    }
     setState(() => saving = true);
     final now = DateTime.now();
     final original = widget.issue;
@@ -168,7 +209,9 @@ class _IssueFormScreenState extends State<IssueFormScreen> {
       code: issueCode,
       room: roomController.text.trim(),
       location: locationController.text.trim(),
-      category: categoryController.text.trim(),
+      category: categoryController.text.trim().isEmpty
+          ? quickRecordTitle(descriptionController.text)
+          : categoryController.text.trim(),
       severity: severity,
       description: descriptionController.text.trim(),
       status: status,
@@ -181,7 +224,23 @@ class _IssueFormScreenState extends State<IssueFormScreen> {
     try {
       await widget.controller.saveIssue(issue);
       committed = true;
-      if (mounted) Navigator.pop(context, true);
+      if (!mounted) return;
+      setState(() {
+        saving = false;
+      });
+      await WidgetsBinding.instance.endOfFrame;
+      if (!mounted) return;
+      if (widget.offerPostSaveActions && original == null) {
+        final result = await showModalBottomSheet<IssueFormResult>(
+          context: context,
+          isDismissible: false,
+          enableDrag: false,
+          builder: (context) => const _QuickSaveActions(),
+        );
+        if (mounted) Navigator.pop(context, result ?? IssueFormResult.saved);
+      } else {
+        Navigator.pop(context, IssueFormResult.saved);
+      }
     } catch (error) {
       if (mounted) {
         setState(() => saving = false);
@@ -192,248 +251,487 @@ class _IssueFormScreenState extends State<IssueFormScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          widget.issue == null ? '记录问题 $issueCode' : '编辑问题 $issueCode',
-        ),
-        actions: [
-          TextButton(
-            onPressed: saving ? null : save,
-            child: const Text(
-              '保存',
-              style: TextStyle(fontWeight: FontWeight.w800),
-            ),
+    return PopScope<IssueFormResult>(
+      canPop: !saving && (committed || allowPop || widget.issue != null),
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        if (saving) return;
+        if (!_hasUnsavedDraft) {
+          await _allowAndPop();
+          return;
+        }
+        final discard = await confirmAction(
+          context,
+          title: '放弃这条记录？',
+          message: '已添加的照片和填写内容不会保存。',
+          confirmLabel: '放弃记录',
+        );
+        if (discard) await _allowAndPop();
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: LText(
+            widget.issue == null
+                ? activeMode == IssueEntryMode.quick
+                      ? '快速图文记录 $issueCode'
+                      : '正式记录 $issueCode'
+                : '编辑记录 $issueCode',
           ),
-        ],
-      ),
-      body: Form(
-        key: formKey,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
-          children: [
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: brandColor.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(16),
+          actions: [
+            TextButton(
+              onPressed: saving ? null : save,
+              child: const LText(
+                '保存',
+                style: TextStyle(fontWeight: FontWeight.w800),
               ),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 11,
-                      vertical: 7,
-                    ),
-                    decoration: BoxDecoration(
-                      color: brandColor,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      issueCode,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  const Expanded(
-                    child: Text(
-                      '编号由项目自动生成，删除问题后也不会重复使用。',
-                      style: TextStyle(color: mutedColor, fontSize: 12),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 22),
-            const SectionHeader(title: '位置与问题', subtitle: '让施工方只看报告也能找到具体部位。'),
-            const SizedBox(height: 14),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: TextFormField(
-                    controller: roomController,
-                    decoration: const InputDecoration(
-                      labelText: '房间/区域 *',
-                      hintText: '主卫',
-                    ),
-                    validator: _required,
-                    textInputAction: TextInputAction.next,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: TextFormField(
-                    controller: locationController,
-                    decoration: const InputDecoration(
-                      labelText: '具体位置 *',
-                      hintText: '东侧墙面',
-                    ),
-                    validator: _required,
-                    textInputAction: TextInputAction.next,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: categoryController,
-              decoration: const InputDecoration(
-                labelText: '问题类型 *',
-                hintText: '例如：瓷砖空鼓、墙面开裂、门窗安装',
-              ),
-              validator: _required,
-              textInputAction: TextInputAction.next,
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: descriptionController,
-              minLines: 3,
-              maxLines: 6,
-              decoration: const InputDecoration(
-                labelText: '问题描述 *',
-                hintText: '描述现象、范围、尺寸或检测方式',
-              ),
-              validator: _required,
-            ),
-            const SizedBox(height: 22),
-            const SectionHeader(title: '整改责任', subtitle: '明确优先级、当前进度和交付节点。'),
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                Expanded(
-                  child: DropdownButtonFormField<IssueSeverity>(
-                    initialValue: severity,
-                    decoration: const InputDecoration(labelText: '严重程度'),
-                    items: IssueSeverity.values
-                        .map(
-                          (value) => DropdownMenuItem(
-                            value: value,
-                            child: Text(value.label),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (value) => setState(() => severity = value!),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: DropdownButtonFormField<IssueStatus>(
-                    initialValue: status,
-                    decoration: const InputDecoration(labelText: '整改状态'),
-                    items: IssueStatus.values
-                        .map(
-                          (value) => DropdownMenuItem(
-                            value: value,
-                            child: Text(value.label),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (value) => setState(() => status = value!),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: TextFormField(
-                    controller: assigneeController,
-                    decoration: const InputDecoration(labelText: '负责人/责任单位'),
-                    textInputAction: TextInputAction.next,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(14),
-                    onTap: () async {
-                      final picked = await showDatePicker(
-                        context: context,
-                        firstDate: DateTime.now().subtract(
-                          const Duration(days: 365),
-                        ),
-                        lastDate: DateTime.now().add(
-                          const Duration(days: 3650),
-                        ),
-                        initialDate:
-                            dueDate ??
-                            DateTime.now().add(const Duration(days: 7)),
-                      );
-                      if (picked != null) setState(() => dueDate = picked);
-                    },
-                    child: InputDecorator(
-                      decoration: InputDecoration(
-                        labelText: '整改期限',
-                        suffixIcon: dueDate == null
-                            ? const Icon(
-                                Icons.calendar_today_outlined,
-                                size: 20,
-                              )
-                            : IconButton(
-                                tooltip: '清除期限',
-                                onPressed: () => setState(() => dueDate = null),
-                                icon: const Icon(Icons.close_rounded, size: 18),
-                              ),
-                      ),
-                      child: Text(
-                        dueDate == null
-                            ? '未设置'
-                            : DateFormat('yyyy-MM-dd').format(dueDate!),
-                        style: TextStyle(
-                          color: dueDate == null ? mutedColor : inkColor,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 24),
-            _PhotoSection(
-              phase: PhotoPhase.before,
-              photos: photos,
-              onAdd: () => addPhoto(PhotoPhase.before),
-              onEdit: editAnnotations,
-              onRemove: removePhoto,
-            ),
-            const SizedBox(height: 20),
-            _PhotoSection(
-              phase: PhotoPhase.after,
-              photos: photos,
-              onAdd: () => addPhoto(PhotoPhase.after),
-              onEdit: editAnnotations,
-              onRemove: removePhoto,
             ),
           ],
         ),
-      ),
-      bottomNavigationBar: SafeArea(
-        minimum: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-        child: FilledButton.icon(
-          onPressed: saving ? null : save,
-          icon: saving
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Colors.white,
+        body: Form(
+          key: formKey,
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: context.appColors.brand.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 11,
+                        vertical: 7,
+                      ),
+                      decoration: BoxDecoration(
+                        color: context.appColors.brand,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: LText(
+                        issueCode,
+                        translate: false,
+                        style: TextStyle(
+                          color: context.appColors.onBrand,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: LText(
+                        activeMode == IssueEntryMode.quick
+                            ? '保存到“${widget.project.name}”；添加照片和说明即可。'
+                            : '步骤 2/3：交代位置与内容，责任和进度按需补充。',
+                        style: TextStyle(
+                          color: context.appColors.muted,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (activeMode == IssueEntryMode.quick) ..._buildQuickFields(),
+              if (activeMode == IssueEntryMode.formal) ...[
+                const SizedBox(height: 22),
+                const SectionHeader(
+                  title: '位置与内容',
+                  subtitle: '用简短标题和说明把照片交代清楚。',
+                ),
+                const SizedBox(height: 14),
+                ResponsiveFieldRow(
+                  children: [
+                    TextFormField(
+                      controller: roomController,
+                      decoration: InputDecoration(
+                        labelText: tr('房间/区域 *'),
+                        hintText: tr('主卫'),
+                      ),
+                      validator: _required,
+                      textInputAction: TextInputAction.next,
+                    ),
+                    TextFormField(
+                      controller: locationController,
+                      decoration: InputDecoration(
+                        labelText: tr('具体位置（可选）'),
+                        hintText: tr('东侧墙面'),
+                      ),
+                      textInputAction: TextInputAction.next,
+                    ),
+                  ],
+                ),
+                _ReuseChips(
+                  label: '常用区域',
+                  values: _uniqueSuggestions(
+                    widget.existingIssues.map((issue) => issue.room),
                   ),
-                )
-              : const Icon(Icons.check_rounded),
-          label: Text(saving ? '正在保存…' : '保存问题记录'),
+                  onSelected: (value) => roomController.text = value,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: categoryController,
+                  decoration: InputDecoration(
+                    labelText: tr('记录标题 *'),
+                    hintText: tr('例如：墙面裂缝、设备位置、到货情况'),
+                  ),
+                  validator: _required,
+                  textInputAction: TextInputAction.next,
+                ),
+                _ReuseChips(
+                  label: '常用标题',
+                  values: _uniqueSuggestions(
+                    widget.existingIssues.map((issue) => issue.category),
+                  ),
+                  onSelected: (value) => categoryController.text = value,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: descriptionController,
+                  minLines: 3,
+                  maxLines: 6,
+                  decoration: InputDecoration(
+                    labelText: tr('照片说明 *'),
+                    hintText: tr('说明现场情况、关注点或后续安排'),
+                  ),
+                  validator: _required,
+                ),
+                _ReuseChips(
+                  label: '常用说明',
+                  values: _uniqueSuggestions(
+                    widget.existingIssues.map((issue) => issue.description),
+                  ),
+                  onSelected: (value) => descriptionController.text = value,
+                ),
+                const SizedBox(height: 18),
+                Card(
+                  child: SwitchListTile(
+                    value: showAdvanced,
+                    onChanged: (value) => setState(() => showAdvanced = value),
+                    secondary: Icon(
+                      Icons.tune_rounded,
+                      color: context.appColors.brand,
+                    ),
+                    title: const LText(
+                      '补充责任与进度',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    subtitle: const LText('可选：优先级、状态、负责人和期限'),
+                  ),
+                ),
+                if (showAdvanced) ...[
+                  const SizedBox(height: 14),
+                  ResponsiveFieldRow(
+                    children: [
+                      DropdownButtonFormField<IssueSeverity>(
+                        initialValue: severity,
+                        decoration: InputDecoration(labelText: tr('优先级')),
+                        items: IssueSeverity.values
+                            .map(
+                              (value) => DropdownMenuItem(
+                                value: value,
+                                child: LText(value.label),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (value) => setState(() => severity = value!),
+                      ),
+                      DropdownButtonFormField<IssueStatus>(
+                        initialValue: status,
+                        decoration: InputDecoration(labelText: tr('处理状态')),
+                        items: IssueStatus.values
+                            .map(
+                              (value) => DropdownMenuItem(
+                                value: value,
+                                child: LText(value.label),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (value) => setState(() => status = value!),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  ResponsiveFieldRow(
+                    children: [
+                      TextFormField(
+                        controller: assigneeController,
+                        decoration: InputDecoration(labelText: tr('负责人')),
+                        textInputAction: TextInputAction.next,
+                      ),
+                      InkWell(
+                        borderRadius: BorderRadius.circular(14),
+                        onTap: () async {
+                          final picked = await showDatePicker(
+                            context: context,
+                            firstDate: DateTime.now().subtract(
+                              const Duration(days: 365),
+                            ),
+                            lastDate: DateTime.now().add(
+                              const Duration(days: 3650),
+                            ),
+                            initialDate:
+                                dueDate ??
+                                DateTime.now().add(const Duration(days: 7)),
+                          );
+                          if (picked != null) {
+                            setState(() => dueDate = picked);
+                          }
+                        },
+                        child: InputDecorator(
+                          decoration: InputDecoration(
+                            labelText: tr('处理期限'),
+                            suffixIcon: dueDate == null
+                                ? const Icon(
+                                    Icons.calendar_today_outlined,
+                                    size: 20,
+                                  )
+                                : IconButton(
+                                    tooltip: tr('清除期限'),
+                                    onPressed: () =>
+                                        setState(() => dueDate = null),
+                                    icon: const Icon(
+                                      Icons.close_rounded,
+                                      size: 18,
+                                    ),
+                                  ),
+                          ),
+                          child: LText(
+                            dueDate == null
+                                ? '未设置'
+                                : DateFormat('yyyy-MM-dd').format(dueDate!),
+                            translate: dueDate == null,
+                            style: TextStyle(
+                              color: dueDate == null
+                                  ? context.appColors.muted
+                                  : context.appColors.ink,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+                const SizedBox(height: 24),
+                _PhotoSection(
+                  phase: PhotoPhase.before,
+                  photos: photos,
+                  onAdd: () => addPhoto(PhotoPhase.before),
+                  onEdit: editAnnotations,
+                  onRemove: removePhoto,
+                ),
+                const SizedBox(height: 20),
+                _PhotoSection(
+                  phase: PhotoPhase.after,
+                  photos: photos,
+                  onAdd: () => addPhoto(PhotoPhase.after),
+                  onEdit: editAnnotations,
+                  onRemove: removePhoto,
+                ),
+              ],
+            ],
+          ),
+        ),
+        bottomNavigationBar: SafeArea(
+          minimum: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+          child: FilledButton.icon(
+            onPressed: saving ? null : save,
+            icon: saving
+                ? SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: context.appColors.onBrand,
+                    ),
+                  )
+                : const Icon(Icons.check_rounded),
+            label: LText(
+              saving
+                  ? '正在保存…'
+                  : activeMode == IssueEntryMode.quick
+                  ? '保存图文记录'
+                  : '保存完整记录',
+            ),
+          ),
         ),
       ),
     );
   }
 
+  bool get _hasUnsavedDraft {
+    if (widget.issue != null) return false;
+    return photos.isNotEmpty ||
+        roomController.text.trim().isNotEmpty ||
+        locationController.text.trim().isNotEmpty ||
+        categoryController.text.trim().isNotEmpty ||
+        descriptionController.text.trim().isNotEmpty ||
+        assigneeController.text.trim().isNotEmpty ||
+        dueDate != null ||
+        severity != IssueSeverity.unspecified ||
+        status != IssueStatus.unspecified;
+  }
+
+  Future<void> _allowAndPop() async {
+    if (!mounted) return;
+    setState(() => allowPop = true);
+    await WidgetsBinding.instance.endOfFrame;
+    if (mounted) Navigator.pop(context);
+  }
+
+  List<Widget> _buildQuickFields() {
+    return [
+      const SizedBox(height: 22),
+      _PhotoSection(
+        phase: PhotoPhase.before,
+        photos: photos,
+        title: '现场照片',
+        subtitle: '先拍下现场情况，可继续添加照片或标注重点。',
+        onAdd: () => addPhoto(PhotoPhase.before),
+        onEdit: editAnnotations,
+        onRemove: removePhoto,
+      ),
+      const SizedBox(height: 22),
+      const SectionHeader(title: '事情说明', subtitle: '用一句或几句话把照片中的事情交代清楚。'),
+      const SizedBox(height: 12),
+      TextFormField(
+        controller: descriptionController,
+        focusNode: descriptionFocusNode,
+        minLines: 4,
+        maxLines: 8,
+        decoration: InputDecoration(
+          labelText: tr('照片说明 *'),
+          hintText: tr('例如：主卫天花板持续漏水，需要尽快检查上层管道。'),
+          alignLabelWithHint: true,
+        ),
+        validator: _required,
+      ),
+      _ReuseChips(
+        label: '常用说明',
+        values: _uniqueSuggestions(
+          widget.existingIssues.map((issue) => issue.description),
+        ),
+        onSelected: (value) => descriptionController.text = value,
+      ),
+      const SizedBox(height: 16),
+      Card(
+        child: ExpansionTile(
+          initiallyExpanded: showOptionalDetails,
+          onExpansionChanged: (value) => showOptionalDetails = value,
+          leading: Icon(Icons.place_outlined, color: context.appColors.brand),
+          title: const LText(
+            '补充位置与标题（可选）',
+            style: TextStyle(fontWeight: FontWeight.w700),
+          ),
+          subtitle: const LText('不填写时会自动生成标题，并显示为“未分类”'),
+          childrenPadding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+          children: [
+            ResponsiveFieldRow(
+              children: [
+                TextFormField(
+                  controller: roomController,
+                  decoration: InputDecoration(
+                    labelText: tr('房间/区域'),
+                    hintText: tr('主卫'),
+                  ),
+                  textInputAction: TextInputAction.next,
+                ),
+                TextFormField(
+                  controller: locationController,
+                  decoration: InputDecoration(
+                    labelText: tr('具体位置'),
+                    hintText: tr('东侧墙面'),
+                  ),
+                  textInputAction: TextInputAction.next,
+                ),
+              ],
+            ),
+            _ReuseChips(
+              label: '常用区域',
+              values: _uniqueSuggestions(
+                widget.existingIssues.map((issue) => issue.room),
+              ),
+              onSelected: (value) => roomController.text = value,
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: categoryController,
+              decoration: InputDecoration(
+                labelText: tr('记录标题'),
+                hintText: tr('留空时取说明第一行'),
+              ),
+              textInputAction: TextInputAction.done,
+            ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 12),
+      OutlinedButton.icon(
+        onPressed: () => setState(() {
+          activeMode = IssueEntryMode.formal;
+          showOptionalDetails = true;
+        }),
+        icon: const Icon(Icons.fact_check_outlined),
+        label: const LText('补充为完整记录'),
+      ),
+    ];
+  }
+
   String? _required(String? value) {
-    return value == null || value.trim().isEmpty ? '此项必填' : null;
+    return value == null || value.trim().isEmpty ? tr('此项必填') : null;
+  }
+
+  List<String> _uniqueSuggestions(Iterable<String> source) {
+    return source
+        .map((value) => value.trim())
+        .where((value) => value.isNotEmpty)
+        .toSet()
+        .take(5)
+        .toList();
+  }
+}
+
+class _ReuseChips extends StatelessWidget {
+  const _ReuseChips({
+    required this.label,
+    required this.values,
+    required this.onSelected,
+  });
+
+  final String label;
+  final List<String> values;
+  final ValueChanged<String> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    if (values.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            LText(
+              label,
+              style: TextStyle(color: context.appColors.muted, fontSize: 12),
+            ),
+            const SizedBox(width: 8),
+            for (final value in values) ...[
+              ActionChip(
+                label: LText(
+                  value,
+                  translate: false,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                onPressed: () => onSelected(value),
+              ),
+              const SizedBox(width: 7),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -444,6 +742,8 @@ class _PhotoSection extends StatelessWidget {
     required this.onAdd,
     required this.onEdit,
     required this.onRemove,
+    this.title,
+    this.subtitle,
   });
 
   final PhotoPhase phase;
@@ -451,6 +751,8 @@ class _PhotoSection extends StatelessWidget {
   final VoidCallback onAdd;
   final ValueChanged<int> onEdit;
   final ValueChanged<int> onRemove;
+  final String? title;
+  final String? subtitle;
 
   @override
   Widget build(BuildContext context) {
@@ -462,14 +764,16 @@ class _PhotoSection extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SectionHeader(
-          title: '${phase.label}照片',
-          subtitle: phase == PhotoPhase.before
-              ? '保留问题原貌，可添加红框、箭头和文字。'
-              : '关联处理结果，形成同一编号下的前后对比。',
+          title: title ?? '${phase.label}照片',
+          subtitle:
+              subtitle ??
+              (phase == PhotoPhase.before
+                  ? '保留现场原貌，可添加红框、箭头和文字。'
+                  : '关联后续情况，形成同一编号下的前后对比。'),
           trailing: TextButton.icon(
             onPressed: onAdd,
             icon: const Icon(Icons.add_a_photo_outlined, size: 18),
-            label: const Text('添加'),
+            label: const LText('添加'),
           ),
         ),
         const SizedBox(height: 12),
@@ -481,16 +785,22 @@ class _PhotoSection extends StatelessWidget {
               height: 108,
               width: double.infinity,
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: context.appColors.surface,
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: lineColor),
+                border: Border.all(color: context.appColors.line),
               ),
-              child: const Column(
+              child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.add_photo_alternate_outlined, color: brandColor),
-                  SizedBox(height: 7),
-                  Text('拍照或从相册导入', style: TextStyle(color: mutedColor)),
+                  Icon(
+                    Icons.add_photo_alternate_outlined,
+                    color: context.appColors.brand,
+                  ),
+                  const SizedBox(height: 7),
+                  LText(
+                    '拍照或从相册导入',
+                    style: TextStyle(color: context.appColors.muted),
+                  ),
                 ],
               ),
             ),
@@ -510,18 +820,24 @@ class _PhotoSection extends StatelessWidget {
                     child: Container(
                       width: 88,
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: context.appColors.surface,
                         borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: lineColor),
+                        border: Border.all(color: context.appColors.line),
                       ),
-                      child: const Column(
+                      child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.add_rounded, color: brandColor),
-                          SizedBox(height: 5),
-                          Text(
+                          Icon(
+                            Icons.add_rounded,
+                            color: context.appColors.brand,
+                          ),
+                          const SizedBox(height: 5),
+                          LText(
                             '继续添加',
-                            style: TextStyle(color: mutedColor, fontSize: 12),
+                            style: TextStyle(
+                              color: context.appColors.muted,
+                              fontSize: 12,
+                            ),
                           ),
                         ],
                       ),
@@ -556,7 +872,7 @@ class _PhotoSection extends StatelessWidget {
                               color: Colors.black.withValues(alpha: 0.68),
                               borderRadius: BorderRadius.circular(8),
                             ),
-                            child: Text(
+                            child: LText(
                               photo.annotations.isEmpty
                                   ? '点击标注'
                                   : '${photo.annotations.length} 个标注',
@@ -578,7 +894,7 @@ class _PhotoSection extends StatelessWidget {
                               ),
                               foregroundColor: Colors.white,
                             ),
-                            tooltip: '移除照片',
+                            tooltip: tr('移除照片'),
                             onPressed: () => onRemove(sourceIndex),
                             icon: const Icon(Icons.close_rounded, size: 17),
                           ),
@@ -591,6 +907,58 @@ class _PhotoSection extends StatelessWidget {
             ),
           ),
       ],
+    );
+  }
+}
+
+class _QuickSaveActions extends StatelessWidget {
+  const _QuickSaveActions();
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Icon(
+              Icons.check_circle_rounded,
+              color: context.appColors.completed,
+              size: 42,
+            ),
+            const SizedBox(height: 10),
+            LText(
+              '图文记录已保存',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: context.appColors.ink,
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 18),
+            FilledButton.icon(
+              onPressed: () =>
+                  Navigator.pop(context, IssueFormResult.savedAndAddAnother),
+              icon: const Icon(Icons.add_a_photo_outlined),
+              label: const LText('继续记录下一条'),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: () =>
+                  Navigator.pop(context, IssueFormResult.savedAndOpenProject),
+              icon: const Icon(Icons.folder_open_outlined),
+              label: const LText('查看项目记录'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, IssueFormResult.saved),
+              child: const LText('完成'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

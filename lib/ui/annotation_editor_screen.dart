@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../models.dart';
+import 'app_theme.dart';
 import 'widgets/annotated_photo.dart';
 
 class AnnotationEditorScreen extends StatefulWidget {
@@ -36,32 +37,11 @@ class _AnnotationEditorScreenState extends State<AnnotationEditorScreen> {
   }
 
   Future<void> _addText(Offset position, Size size) async {
-    final controller = TextEditingController();
     final text = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('添加文字标注'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLength: 24,
-          decoration: const InputDecoration(hintText: '例如：开裂处'),
-          onSubmitted: (value) => Navigator.pop(context, value.trim()),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, controller.text.trim()),
-            child: const Text('添加'),
-          ),
-        ],
-      ),
+      builder: (context) => const _TextAnnotationDialog(),
     );
-    controller.dispose();
-    if (text == null || text.isEmpty) return;
+    if (!mounted || text == null || text.isEmpty) return;
     final point = _normalized(position, size);
     setState(() {
       annotations.add(
@@ -106,18 +86,18 @@ class _AnnotationEditorScreenState extends State<AnnotationEditorScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0E1514),
+      backgroundColor: editorCanvasColor,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF0E1514),
+        backgroundColor: editorCanvasColor,
         foregroundColor: Colors.white,
-        title: const Text('标注问题位置'),
+        title: const LText('标注照片重点'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, annotations),
-            child: const Text(
+            child: const LText(
               '完成',
               style: TextStyle(
-                color: Color(0xFF58D2C4),
+                color: editorAccentColor,
                 fontWeight: FontWeight.w800,
               ),
             ),
@@ -200,14 +180,14 @@ class _AnnotationEditorScreenState extends State<AnnotationEditorScreen> {
             Container(
               padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
               decoration: const BoxDecoration(
-                color: Color(0xFF17201F),
-                border: Border(top: BorderSide(color: Color(0xFF293532))),
+                color: editorSurfaceColor,
+                border: Border(top: BorderSide(color: editorLineColor)),
               ),
               child: Column(
                 children: [
-                  const Text(
+                  const LText(
                     '拖动绘制方框或箭头；文字模式下点击照片定位。',
-                    style: TextStyle(color: Color(0xFF9FB0AC), fontSize: 12),
+                    style: TextStyle(color: editorMutedColor, fontSize: 12),
                   ),
                   const SizedBox(height: 10),
                   Row(
@@ -246,7 +226,7 @@ class _AnnotationEditorScreenState extends State<AnnotationEditorScreen> {
                       ),
                       const SizedBox(width: 8),
                       IconButton.filledTonal(
-                        tooltip: '撤销',
+                        tooltip: tr('撤销'),
                         onPressed: annotations.isEmpty
                             ? null
                             : () => setState(() => annotations.removeLast()),
@@ -260,6 +240,49 @@ class _AnnotationEditorScreenState extends State<AnnotationEditorScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _TextAnnotationDialog extends StatefulWidget {
+  const _TextAnnotationDialog();
+
+  @override
+  State<_TextAnnotationDialog> createState() => _TextAnnotationDialogState();
+}
+
+class _TextAnnotationDialogState extends State<_TextAnnotationDialog> {
+  final controller = TextEditingController();
+
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+
+  void close([String? text]) {
+    FocusScope.of(context).unfocus();
+    Navigator.pop(context, text);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const LText('添加文字标注'),
+      content: TextField(
+        controller: controller,
+        autofocus: true,
+        maxLength: 24,
+        decoration: InputDecoration(hintText: tr('例如：开裂处')),
+        onSubmitted: (value) => close(value.trim()),
+      ),
+      actions: [
+        TextButton(onPressed: close, child: const LText('取消')),
+        FilledButton(
+          onPressed: () => close(controller.text.trim()),
+          child: const LText('添加'),
+        ),
+      ],
     );
   }
 }
@@ -280,7 +303,7 @@ class _ToolButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: selected ? const Color(0xFF0B756B) : const Color(0xFF25302E),
+      color: selected ? brandColor : editorInactiveColor,
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
@@ -292,7 +315,7 @@ class _ToolButton extends StatelessWidget {
             children: [
               Icon(icon, color: Colors.white, size: 19),
               const SizedBox(width: 5),
-              Text(
+              LText(
                 label,
                 style: const TextStyle(color: Colors.white, fontSize: 13),
               ),
