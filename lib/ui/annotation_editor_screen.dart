@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import '../models.dart';
@@ -37,7 +38,7 @@ class _AnnotationEditorScreenState extends State<AnnotationEditorScreen> {
   }
 
   Future<void> _addText(Offset position, Size size) async {
-    final text = await showDialog<String>(
+    final text = await showCupertinoDialog<String>(
       context: context,
       builder: (context) => const _TextAnnotationDialog(),
     );
@@ -267,18 +268,24 @@ class _TextAnnotationDialogState extends State<_TextAnnotationDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return CupertinoAlertDialog(
       title: const LText('添加文字标注'),
-      content: TextField(
-        controller: controller,
-        autofocus: true,
-        maxLength: 24,
-        decoration: InputDecoration(hintText: tr('例如：开裂处')),
-        onSubmitted: (value) => close(value.trim()),
+      content: Padding(
+        padding: const EdgeInsets.only(top: 12),
+        child: CupertinoTextField(
+          controller: controller,
+          autofocus: true,
+          maxLength: 24,
+          placeholder: tr('例如：开裂处'),
+          clearButtonMode: OverlayVisibilityMode.editing,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          onSubmitted: (value) => close(value.trim()),
+        ),
       ),
       actions: [
-        TextButton(onPressed: close, child: const LText('取消')),
-        FilledButton(
+        CupertinoDialogAction(onPressed: close, child: const LText('取消')),
+        CupertinoDialogAction(
+          isDefaultAction: true,
           onPressed: () => close(controller.text.trim()),
           child: const LText('添加'),
         ),

@@ -112,30 +112,23 @@ class _IssueFormScreenState extends State<IssueFormScreen> {
   }
 
   Future<void> addPhoto(PhotoPhase phase) async {
-    final source = await showModalBottomSheet<ImageSource>(
+    final source = await showAppActionSheet<ImageSource>(
       context: context,
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.camera_alt_outlined),
-                title: const LText('现场拍照'),
-                subtitle: const LText('打开相机拍摄一张照片'),
-                onTap: () => Navigator.pop(context, ImageSource.camera),
-              ),
-              ListTile(
-                leading: const Icon(Icons.photo_library_outlined),
-                title: const LText('从相册选择'),
-                subtitle: const LText('导入已有的现场照片'),
-                onTap: () => Navigator.pop(context, ImageSource.gallery),
-              ),
-            ],
-          ),
+      title: '添加现场照片',
+      message: '选择拍摄新照片或从系统相册导入',
+      actions: const [
+        AppActionSheetAction(
+          label: '现场拍照',
+          value: ImageSource.camera,
+          icon: Icons.camera_alt_outlined,
+          isDefaultAction: true,
         ),
-      ),
+        AppActionSheetAction(
+          label: '从相册选择',
+          value: ImageSource.gallery,
+          icon: Icons.photo_library_outlined,
+        ),
+      ],
     );
     if (source == null) return;
     try {
@@ -231,11 +224,26 @@ class _IssueFormScreenState extends State<IssueFormScreen> {
       await WidgetsBinding.instance.endOfFrame;
       if (!mounted) return;
       if (widget.offerPostSaveActions && original == null) {
-        final result = await showModalBottomSheet<IssueFormResult>(
+        final result = await showAppActionSheet<IssueFormResult>(
           context: context,
-          isDismissible: false,
-          enableDrag: false,
-          builder: (context) => const _QuickSaveActions(),
+          title: '图文记录已保存',
+          message: '接下来要做什么？',
+          barrierDismissible: false,
+          cancelLabel: '完成',
+          cancelValue: IssueFormResult.saved,
+          actions: const [
+            AppActionSheetAction(
+              label: '继续记录下一条',
+              value: IssueFormResult.savedAndAddAnother,
+              icon: Icons.add_a_photo_outlined,
+              isDefaultAction: true,
+            ),
+            AppActionSheetAction(
+              label: '查看项目记录',
+              value: IssueFormResult.savedAndOpenProject,
+              icon: Icons.folder_open_outlined,
+            ),
+          ],
         );
         if (mounted) Navigator.pop(context, result ?? IssueFormResult.saved);
       } else {
@@ -426,6 +434,8 @@ class _IssueFormScreenState extends State<IssueFormScreen> {
                     children: [
                       DropdownButtonFormField<IssueSeverity>(
                         initialValue: severity,
+                        dropdownColor: context.appColors.surface,
+                        borderRadius: BorderRadius.circular(14),
                         decoration: InputDecoration(labelText: tr('优先级')),
                         items: IssueSeverity.values
                             .map(
@@ -439,6 +449,8 @@ class _IssueFormScreenState extends State<IssueFormScreen> {
                       ),
                       DropdownButtonFormField<IssueStatus>(
                         initialValue: status,
+                        dropdownColor: context.appColors.surface,
+                        borderRadius: BorderRadius.circular(14),
                         decoration: InputDecoration(labelText: tr('处理状态')),
                         items: IssueStatus.values
                             .map(
@@ -463,7 +475,7 @@ class _IssueFormScreenState extends State<IssueFormScreen> {
                       InkWell(
                         borderRadius: BorderRadius.circular(14),
                         onTap: () async {
-                          final picked = await showDatePicker(
+                          final picked = await showAppDatePicker(
                             context: context,
                             firstDate: DateTime.now().subtract(
                               const Duration(days: 365),
@@ -474,6 +486,7 @@ class _IssueFormScreenState extends State<IssueFormScreen> {
                             initialDate:
                                 dueDate ??
                                 DateTime.now().add(const Duration(days: 7)),
+                            title: '选择处理期限',
                           );
                           if (picked != null) {
                             setState(() => dueDate = picked);
@@ -907,58 +920,6 @@ class _PhotoSection extends StatelessWidget {
             ),
           ),
       ],
-    );
-  }
-}
-
-class _QuickSaveActions extends StatelessWidget {
-  const _QuickSaveActions();
-
-  @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Icon(
-              Icons.check_circle_rounded,
-              color: context.appColors.completed,
-              size: 42,
-            ),
-            const SizedBox(height: 10),
-            LText(
-              '图文记录已保存',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: context.appColors.ink,
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            const SizedBox(height: 18),
-            FilledButton.icon(
-              onPressed: () =>
-                  Navigator.pop(context, IssueFormResult.savedAndAddAnother),
-              icon: const Icon(Icons.add_a_photo_outlined),
-              label: const LText('继续记录下一条'),
-            ),
-            const SizedBox(height: 8),
-            OutlinedButton.icon(
-              onPressed: () =>
-                  Navigator.pop(context, IssueFormResult.savedAndOpenProject),
-              icon: const Icon(Icons.folder_open_outlined),
-              label: const LText('查看项目记录'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(context, IssueFormResult.saved),
-              child: const LText('完成'),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

@@ -29,12 +29,8 @@ class ProjectListScreen extends StatelessWidget {
     ProjectRecord? project,
     bool formalFlow = false,
   }) async {
-    final result = await showModalBottomSheet<ProjectRecord>(
+    final result = await showAppBottomSheet<ProjectRecord>(
       context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: context.appColors.canvas,
-      showDragHandle: false,
       builder: (context) => ProjectFormSheet(
         project: project,
         formalFlow: formalFlow,
@@ -56,12 +52,8 @@ class ProjectListScreen extends StatelessWidget {
   }
 
   Future<void> _openCreateFlow(BuildContext context) async {
-    final choice = await showModalBottomSheet<CreateFlowChoice>(
+    final choice = await showAppBottomSheet<CreateFlowChoice>(
       context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: context.appColors.canvas,
-      showDragHandle: false,
       builder: (context) => CreateFlowSheet(
         projects: controller.projects
             .map((overview) => overview.project)
@@ -89,11 +81,8 @@ class ProjectListScreen extends StatelessWidget {
 
     var target = choice.project;
     if (target == null) {
-      final name = await showModalBottomSheet<String>(
+      final name = await showAppBottomSheet<String>(
         context: context,
-        isScrollControlled: true,
-        useSafeArea: true,
-        backgroundColor: context.appColors.canvas,
         builder: (context) => const QuickProjectNameSheet(),
       );
       if (name == null || !context.mounted) return;

@@ -80,6 +80,8 @@ class _CreateFlowSheetState extends State<CreateFlowSheet> {
                   : DropdownButtonFormField<ProjectRecord>(
                       initialValue: selectedProject,
                       isExpanded: true,
+                      dropdownColor: context.appColors.surface,
+                      borderRadius: BorderRadius.circular(14),
                       decoration: InputDecoration(
                         labelText: tr('将保存到'),
                         isDense: true,

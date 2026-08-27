@@ -4,6 +4,7 @@ import 'package:uuid/uuid.dart';
 
 import '../models.dart';
 import 'app_theme.dart';
+import 'widgets/common.dart';
 
 class ProjectFormSheet extends StatefulWidget {
   const ProjectFormSheet({
@@ -162,11 +163,12 @@ class _ProjectFormSheetState extends State<ProjectFormSheet> {
                 InkWell(
                   borderRadius: BorderRadius.circular(14),
                   onTap: () async {
-                    final picked = await showDatePicker(
+                    final picked = await showAppDatePicker(
                       context: context,
                       firstDate: DateTime(2020),
                       lastDate: DateTime(2100),
                       initialDate: inspectionDate,
+                      title: '选择记录日期',
                     );
                     if (picked != null) setState(() => inspectionDate = picked);
                   },

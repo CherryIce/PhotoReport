@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -81,7 +82,7 @@ void main() {
   testWidgets('确认文字标注后弹窗可安全关闭', (tester) async {
     await openTextAnnotationDialog(tester);
 
-    await tester.enterText(find.byType(TextField), '墙面裂缝');
+    await tester.enterText(find.byType(CupertinoTextField), '墙面裂缝');
     await tester.tap(find.text('添加'));
     await tester.pump(const Duration(milliseconds: 300));
 

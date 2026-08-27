@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 export '../l10n/app_localizations.dart';
@@ -208,6 +209,14 @@ ThemeData buildAppTheme({Brightness brightness = Brightness.light}) {
     useMaterial3: true,
     brightness: brightness,
     colorScheme: scheme,
+    cupertinoOverrideTheme: CupertinoThemeData(
+      brightness: brightness,
+      primaryColor: colors.brand,
+      primaryContrastingColor: colors.onBrand,
+      barBackgroundColor: colors.surface,
+      scaffoldBackgroundColor: colors.canvas,
+      applyThemeToAll: true,
+    ),
     scaffoldBackgroundColor: colors.canvas,
     fontFamilyFallback: const ['PingFang SC', 'Heiti SC'],
     extensions: [colors],
@@ -292,6 +301,13 @@ ThemeData buildAppTheme({Brightness brightness = Brightness.light}) {
     dialogTheme: DialogThemeData(
       backgroundColor: colors.surface,
       surfaceTintColor: Colors.transparent,
+    ),
+    popupMenuTheme: PopupMenuThemeData(
+      color: colors.surface,
+      surfaceTintColor: Colors.transparent,
+      elevation: 6,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      textStyle: TextStyle(color: colors.ink),
     ),
     snackBarTheme: SnackBarThemeData(
       backgroundColor: colors.ink,

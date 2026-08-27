@@ -33,6 +33,9 @@ void main() {
     expect(theme.colorScheme.secondaryContainer, softSurfaceColor);
     expect(theme.floatingActionButtonTheme.backgroundColor, brandColor);
     expect(theme.chipTheme.selectedColor, softSurfaceColor);
+    expect(theme.cupertinoOverrideTheme?.primaryColor, brandColor);
+    expect(theme.cupertinoOverrideTheme?.barBackgroundColor, surfaceColor);
+    expect(theme.popupMenuTheme.shape, isA<RoundedRectangleBorder>());
   });
 
   test('dark theme uses dark semantic surfaces and readable accents', () {
@@ -51,6 +54,8 @@ void main() {
     expect(theme.inputDecorationTheme.fillColor, darkSurfaceColor);
     expect(theme.colorScheme.primary, darkBrandColor);
     expect(theme.colorScheme.onPrimary, darkCanvasColor);
+    expect(theme.cupertinoOverrideTheme?.primaryColor, darkBrandColor);
+    expect(theme.cupertinoOverrideTheme?.barBackgroundColor, darkSurfaceColor);
   });
 
   testWidgets('system brightness selects the dark semantic theme', (

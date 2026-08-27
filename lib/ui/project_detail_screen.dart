@@ -96,12 +96,8 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   }
 
   Future<void> editProject() async {
-    final result = await showModalBottomSheet<ProjectRecord>(
+    final result = await showAppBottomSheet<ProjectRecord>(
       context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: context.appColors.canvas,
-      showDragHandle: false,
       builder: (context) => ProjectFormSheet(project: project),
     );
     if (result == null || !mounted) return;
