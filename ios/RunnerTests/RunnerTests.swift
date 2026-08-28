@@ -54,6 +54,19 @@ final class RunnerTests: XCTestCase {
     XCTAssertTrue(text.contains("Pending"))
     XCTAssertTrue(text.contains("Photo description"))
     XCTAssertTrue(text.contains("No site photos attached to this record"))
+
+    let issuePage = try XCTUnwrap(document.page(at: 0))
+    let prioritySelection = try XCTUnwrap(
+      document.findString("High priority", withOptions: []).first
+    )
+    let statusSelection = try XCTUnwrap(
+      document.findString("Pending", withOptions: []).first
+    )
+    XCTAssertEqual(
+      prioritySelection.bounds(for: issuePage).midY,
+      statusSelection.bounds(for: issuePage).midY,
+      accuracy: 1
+    )
   }
 
   func testGeneratesAnnotatedChineseReport() throws {
@@ -90,9 +103,9 @@ final class RunnerTests: XCTestCase {
         "path": imageURL.path,
         "phase": "整改前",
         "annotations": [
-          ["kind": "rectangle", "x1": 0.15, "y1": 0.2, "x2": 0.75, "y2": 0.8, "text": ""],
-          ["kind": "arrow", "x1": 0.1, "y1": 0.1, "x2": 0.4, "y2": 0.45, "text": ""],
-          ["kind": "text", "x1": 0.46, "y1": 0.2, "x2": 0.46, "y2": 0.2, "text": "空鼓处"],
+          ["kind": "rectangle", "x1": 0.15, "y1": 0.2, "x2": 0.75, "y2": 0.8, "text": "", "color": 0xFF22C55E],
+          ["kind": "arrow", "x1": 0.1, "y1": 0.1, "x2": 0.4, "y2": 0.45, "text": "", "color": 0xFF2F80ED],
+          ["kind": "text", "x1": 0.46, "y1": 0.2, "x2": 0.46, "y2": 0.2, "text": "空鼓处", "color": 0xFFFFFFFF],
         ],
       ]],
     ]]

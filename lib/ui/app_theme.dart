@@ -16,6 +16,10 @@ const inProgressColor = Color(0xFF2465A8);
 const completedColor = Color(0xFF1F7650);
 const riskColor = Color(0xFFB7353D);
 const annotationColor = Color(0xFFFF2D2D);
+const annotationGreenColor = Color(0xFF22C55E);
+const annotationBlueColor = Color(0xFF2F80ED);
+const annotationBlackColor = Color(0xFF111111);
+const annotationWhiteColor = Color(0xFFFFFFFF);
 
 const darkBrandColor = Color(0xFF58D2C4);
 const darkBrandDeepColor = Color(0xFF123B37);
@@ -308,10 +312,6 @@ ThemeData buildAppTheme({Brightness brightness = Brightness.light}) {
       elevation: 6,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       textStyle: TextStyle(color: colors.ink),
-    ),
-    snackBarTheme: SnackBarThemeData(
-      backgroundColor: colors.ink,
-      contentTextStyle: TextStyle(color: colors.canvas),
     ),
   );
 }

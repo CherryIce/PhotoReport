@@ -161,7 +161,7 @@ class _IssueFormScreenState extends State<IssueFormScreen> {
         descriptionFocusNode.requestFocus();
       }
     } catch (error) {
-      if (mounted) showErrorSnackBar(context, error);
+      if (mounted) AppToast.showError(context, error);
     }
   }
 
@@ -187,9 +187,7 @@ class _IssueFormScreenState extends State<IssueFormScreen> {
   Future<void> save() async {
     if (!formKey.currentState!.validate() || saving) return;
     if (widget.issue == null && photos.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: LText('请至少添加一张现场照片')));
+      AppToast.show(context, tr('请至少添加一张现场照片'), style: AppToastStyle.error);
       return;
     }
     setState(() => saving = true);
@@ -252,7 +250,7 @@ class _IssueFormScreenState extends State<IssueFormScreen> {
     } catch (error) {
       if (mounted) {
         setState(() => saving = false);
-        showErrorSnackBar(context, error);
+        AppToast.showError(context, error);
       }
     }
   }
@@ -876,22 +874,29 @@ class _PhotoSection extends StatelessWidget {
                         Positioned(
                           left: 8,
                           bottom: 8,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 5,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.68),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: LText(
-                              photo.annotations.isEmpty
-                                  ? '点击标注'
-                                  : '${photo.annotations.length} 个标注',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 11,
+                          child: Semantics(
+                            button: true,
+                            child: GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: () => onEdit(sourceIndex),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 5,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.68),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: LText(
+                                  photo.annotations.isEmpty
+                                      ? '点击标注'
+                                      : '${photo.annotations.length} 个标注',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                  ),
+                                ),
                               ),
                             ),
                           ),

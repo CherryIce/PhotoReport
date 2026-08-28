@@ -2,6 +2,8 @@ import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 
 import '../models.dart';
+import 'photo_storage.dart';
+import 'report_storage.dart';
 
 class AppDatabase {
   AppDatabase._();
@@ -121,9 +123,38 @@ class AppDatabase {
       GROUP BY p.id
       ORDER BY p.updated_at DESC
     ''');
+    final normalizedRows = <Map<String, Object?>>[];
+    for (final row in rows) {
+      final normalized = Map<String, Object?>.from(row);
+      final storedPath = row['last_report_path'] as String? ?? '';
+      if (storedPath.isNotEmpty) {
+        final resolvedPath = await const ReportStorage().resolveReportPath(
+          storedPath,
+        );
+        if (resolvedPath == null) {
+          normalized['last_report_path'] = '';
+          normalized['last_report_at'] = null;
+          await db.update(
+            'projects',
+            {'last_report_path': '', 'last_report_at': null},
+            where: 'id = ?',
+            whereArgs: [row['id']],
+          );
+        } else if (resolvedPath != storedPath) {
+          normalized['last_report_path'] = resolvedPath;
+          await db.update(
+            'projects',
+            {'last_report_path': resolvedPath},
+            where: 'id = ?',
+            whereArgs: [row['id']],
+          );
+        }
+      }
+      normalizedRows.add(normalized);
+    }
     int count(Map<String, Object?> row, String key) =>
         (row[key] as num?)?.toInt() ?? 0;
-    return rows
+    return normalizedRows
         .map(
           (row) => ProjectOverview(
             project: ProjectRecord.fromMap(row),
@@ -263,7 +294,21 @@ class AppDatabase {
     );
     final photosByIssue = <String, List<PhotoRecord>>{};
     for (final row in photoRows) {
-      final photo = PhotoRecord.fromMap(row);
+      final normalizedRow = Map<String, Object?>.from(row);
+      final storedPath = row['path']! as String;
+      final resolvedPath = await const PhotoStorage().resolvePhotoPath(
+        storedPath,
+      );
+      if (resolvedPath != storedPath) {
+        await db.update(
+          'photos',
+          {'path': resolvedPath},
+          where: 'id = ?',
+          whereArgs: [row['id']],
+        );
+        normalizedRow['path'] = resolvedPath;
+      }
+      final photo = PhotoRecord.fromMap(normalizedRow);
       photosByIssue.putIfAbsent(photo.issueId, () => []).add(photo);
     }
     return issueRows

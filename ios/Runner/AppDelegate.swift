@@ -381,45 +381,57 @@ import UIKit
     drawText(code, in: CGRect(x: 42, y: 45, width: 76, height: 16), font: .boldSystemFont(ofSize: 11), color: .white, alignment: .center)
     drawText(
       continuation ? copy.text("补充照片") : issue.string("category"),
-      in: CGRect(x: 130, y: 40, width: 315, height: 26),
+      in: CGRect(x: 130, y: 40, width: 423, height: 26),
       font: .boldSystemFont(ofSize: 19),
       color: pdfInk
     )
+    var pills: [(String, UIColor)] = []
     let severity = issue.string("severity")
     if options.bool("includeSeverity") && severity != "未设置" {
-      drawPill(copy.severityPriority(severity), x: 455, y: 40, color: severityColor(severity))
+      pills.append((copy.severityPriority(severity), severityColor(severity)))
     }
     let status = issue.string("status")
     if options.bool("includeStatus") && status != "未设置" {
-      drawPill(copy.text(status), x: 455, y: 72, color: statusColor(status))
+      pills.append((copy.text(status), statusColor(status)))
+    }
+    if !pills.isEmpty {
+      let pillWidth: CGFloat = 98
+      let pillGap: CGFloat = 8
+      let totalWidth = CGFloat(pills.count) * pillWidth + CGFloat(pills.count - 1) * pillGap
+      var pillX = 553 - totalWidth
+      for pill in pills {
+        drawPill(pill.0, x: pillX, y: 74, color: pill.1)
+        pillX += pillWidth + pillGap
+      }
     }
 
-    var photosY: CGFloat = 104
+    let detailY: CGFloat = pills.isEmpty ? 92 : 110
+    var photosY: CGFloat = pills.isEmpty ? 104 : 116
     if !continuation {
       let concise = options.string("layout") == "concise"
       let detailHeight: CGFloat = concise
         ? (options.bool("includePosition") ? 132 : 112)
         : 151
-      let detailRect = CGRect(x: 42, y: 92, width: 511, height: detailHeight)
+      let detailRect = CGRect(x: 42, y: detailY, width: 511, height: detailHeight)
       pdfSoftSurface.setFill()
       UIBezierPath(roundedRect: detailRect, cornerRadius: 12).fill()
-      var descriptionY: CGFloat = 111
+      var descriptionY: CGFloat = detailY + 19
       if options.bool("includePosition") {
         let room = issue.string("room")
         let location = issue.string("location")
         let position = location.isEmpty ? room : "\(room) / \(location)"
-        drawDetailPair(label: copy.text("位置"), value: position, x: 58, y: 107, width: 292)
-        descriptionY = 151
+        drawDetailPair(label: copy.text("位置"), value: position, x: 58, y: detailY + 15, width: 292)
+        descriptionY = detailY + 59
       }
       if !concise && options.bool("includeAssignee") {
-        drawDetailPair(label: copy.text("负责人"), value: issue.string("assignee", fallback: copy.text("未填写")), x: 365, y: 107, width: 168)
+        drawDetailPair(label: copy.text("负责人"), value: issue.string("assignee", fallback: copy.text("未填写")), x: 365, y: detailY + 15, width: 168)
       }
       if !concise && options.bool("includeDueDate") {
-        drawDetailPair(label: copy.text("处理期限"), value: issue.string("dueDate", fallback: copy.text("未设置")), x: 365, y: 150, width: 168)
+        drawDetailPair(label: copy.text("处理期限"), value: issue.string("dueDate", fallback: copy.text("未设置")), x: 365, y: detailY + 58, width: 168)
       }
       drawText(copy.text("照片说明"), in: CGRect(x: 58, y: descriptionY, width: copy.isEnglish ? 118 : 72, height: 17), font: .systemFont(ofSize: 9), color: pdfMuted)
       drawText(issue.string("description"), in: CGRect(x: 58, y: descriptionY + 20, width: concise ? 475 : 292, height: concise ? 43 : 50), font: .systemFont(ofSize: 10.5), color: pdfInk)
-      photosY = concise ? 92 + detailHeight + 22 : 265
+      photosY = detailY + detailHeight + 22
     }
 
     if photos.isEmpty {
@@ -481,10 +493,12 @@ import UIKit
     }
     let start = CGPoint(x: rect.minX + number("x1") * rect.width, y: rect.minY + number("y1") * rect.height)
     let end = CGPoint(x: rect.minX + number("x2") * rect.width, y: rect.minY + number("y2") * rect.height)
-    let red = pdfAnnotation
+    let color = (annotation["color"] as? NSNumber).map {
+      UIColor(photoReportHex: $0.uint32Value & 0x00FF_FFFF)
+    } ?? pdfAnnotation
     let path = UIBezierPath()
     path.lineWidth = 2.4
-    red.setStroke()
+    color.setStroke()
     switch annotation.string("kind") {
     case "rectangle":
       path.append(UIBezierPath(rect: CGRect(x: min(start.x, end.x), y: min(start.y, end.y), width: abs(end.x - start.x), height: abs(end.y - start.y))))
@@ -502,9 +516,14 @@ import UIKit
     case "text":
       let text = annotation.string("text")
       let textRect = CGRect(x: start.x, y: start.y, width: min(130, rect.maxX - start.x), height: 32)
-      red.withAlphaComponent(0.88).setFill()
+      color.withAlphaComponent(0.88).setFill()
       UIBezierPath(roundedRect: textRect, cornerRadius: 4).fill()
-      drawText(text, in: textRect.insetBy(dx: 5, dy: 6), font: .boldSystemFont(ofSize: 8), color: .white)
+      drawText(
+        text,
+        in: textRect.insetBy(dx: 5, dy: 6),
+        font: .boldSystemFont(ofSize: 8),
+        color: color.photoReportContrastingTextColor
+      )
     default:
       break
     }
@@ -684,6 +703,18 @@ private extension UIColor {
       blue: CGFloat(hex & 0xFF) / 255,
       alpha: alpha
     )
+  }
+
+  var photoReportContrastingTextColor: UIColor {
+    var red: CGFloat = 0
+    var green: CGFloat = 0
+    var blue: CGFloat = 0
+    var alpha: CGFloat = 0
+    guard getRed(&red, green: &green, blue: &blue, alpha: &alpha) else {
+      return .white
+    }
+    let luminance = 0.299 * red + 0.587 * green + 0.114 * blue
+    return luminance > 0.5 ? .black : .white
   }
 }
 

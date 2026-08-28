@@ -7,6 +7,23 @@ import 'package:uuid/uuid.dart';
 class PhotoStorage {
   const PhotoStorage();
 
+  Future<String> resolvePhotoPath(
+    String storedPath, {
+    String? documentsPath,
+  }) async {
+    if (await File(storedPath).exists()) return storedPath;
+    final documents = documentsPath == null
+        ? await getApplicationDocumentsDirectory()
+        : Directory(documentsPath);
+    final relocated = p.join(
+      documents.path,
+      'PhotoReport',
+      'photos',
+      p.basename(storedPath),
+    );
+    return await File(relocated).exists() ? relocated : storedPath;
+  }
+
   Future<String> importPhoto(String sourcePath) async {
     final documents = await getApplicationDocumentsDirectory();
     final directory = Directory(

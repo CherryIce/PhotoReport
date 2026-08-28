@@ -17,6 +17,10 @@ void main() {
     expect(completedColor.toARGB32(), 0xFF1F7650);
     expect(riskColor.toARGB32(), 0xFFB7353D);
     expect(annotationColor.toARGB32(), 0xFFFF2D2D);
+    expect(annotationGreenColor.toARGB32(), 0xFF22C55E);
+    expect(annotationBlueColor.toARGB32(), 0xFF2F80ED);
+    expect(annotationBlackColor.toARGB32(), 0xFF111111);
+    expect(annotationWhiteColor.toARGB32(), 0xFFFFFFFF);
   });
 
   test('app theme uses the approved primary surfaces', () {

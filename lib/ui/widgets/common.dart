@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import '../../models.dart';
 import '../app_theme.dart';
 
+export 'app_toast.dart';
+
 class SectionHeader extends StatelessWidget {
   const SectionHeader({
     required this.title,
@@ -99,6 +101,174 @@ class MetricTile extends StatelessWidget {
   }
 }
 
+class CompactStatusSummary extends StatelessWidget {
+  const CompactStatusSummary({
+    required this.total,
+    required this.pending,
+    required this.inProgress,
+    required this.completed,
+    super.key,
+  });
+
+  final int total;
+  final int pending;
+  final int inProgress;
+  final int completed;
+
+  @override
+  Widget build(BuildContext context) {
+    final locale = Localizations.localeOf(context);
+    final isEnglish = AppLocalizations.isEnglish(locale);
+    final recordLabel = isEnglish ? (total == 1 ? 'record' : 'records') : '条记录';
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final useGrid = isEnglish && constraints.maxWidth < 520;
+        final items = <Widget>[
+          _CompactStatusItem(
+            value: total,
+            label: recordLabel,
+            color: context.appColors.ink,
+            icon: Icons.description_outlined,
+            valueFirst: true,
+            alignStart: useGrid,
+            markerKey: const Key('compact-status-total-marker'),
+          ),
+          _CompactStatusItem(
+            value: pending,
+            label: '待处理',
+            color: context.appColors.pending,
+            alignStart: useGrid,
+            markerKey: const Key('compact-status-pending-marker'),
+          ),
+          _CompactStatusItem(
+            value: inProgress,
+            label: '处理中',
+            color: context.appColors.inProgress,
+            alignStart: useGrid,
+            markerKey: const Key('compact-status-in-progress-marker'),
+          ),
+          _CompactStatusItem(
+            value: completed,
+            label: '已完成',
+            color: context.appColors.completed,
+            alignStart: useGrid,
+            markerKey: const Key('compact-status-completed-marker'),
+          ),
+        ];
+        if (useGrid) {
+          final itemWidth = (constraints.maxWidth - 8) / 2;
+          final rawTextScale = MediaQuery.textScalerOf(context).scale(1);
+          final textScale = rawTextScale < 1 ? 1.0 : rawTextScale;
+          final leadingInset = itemWidth * 0.24 / textScale;
+          return Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final item in items)
+                SizedBox(
+                  width: itemWidth,
+                  child: Padding(
+                    padding: EdgeInsets.only(left: leadingInset),
+                    child: item,
+                  ),
+                ),
+            ],
+          );
+        }
+        return IntrinsicHeight(
+          child: Row(
+            children: [
+              for (var index = 0; index < items.length; index++) ...[
+                Expanded(child: items[index]),
+                if (index != items.length - 1)
+                  VerticalDivider(
+                    width: 12,
+                    thickness: 1,
+                    color: context.appColors.line,
+                  ),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _CompactStatusItem extends StatelessWidget {
+  const _CompactStatusItem({
+    required this.value,
+    required this.label,
+    required this.color,
+    this.icon,
+    this.valueFirst = false,
+    this.alignStart = false,
+    this.markerKey,
+  });
+
+  final int value;
+  final String label;
+  final Color color;
+  final IconData? icon;
+  final bool valueFirst;
+  final bool alignStart;
+  final Key? markerKey;
+
+  @override
+  Widget build(BuildContext context) {
+    final valueText = LText(
+      '$value',
+      translate: false,
+      style: TextStyle(
+        color: context.appColors.ink,
+        fontSize: 12,
+        fontWeight: FontWeight.w800,
+      ),
+    );
+    final labelText = Flexible(
+      child: LText(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          color: context.appColors.muted,
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 28),
+      child: Row(
+        mainAxisAlignment: alignStart
+            ? MainAxisAlignment.start
+            : MainAxisAlignment.center,
+        children: [
+          if (icon != null)
+            Icon(icon, key: markerKey, size: 15, color: color)
+          else
+            Container(
+              key: markerKey,
+              width: 7,
+              height: 7,
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+            ),
+          const SizedBox(width: 5),
+          if (valueFirst) ...[
+            valueText,
+            const SizedBox(width: 3),
+            labelText,
+          ] else ...[
+            labelText,
+            const SizedBox(width: 3),
+            valueText,
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 class StatusBadge extends StatelessWidget {
   const StatusBadge({required this.status, super.key});
 
@@ -166,6 +336,27 @@ class _Badge extends StatelessWidget {
 }
 
 const _appSheetBorderRadius = BorderRadius.vertical(top: Radius.circular(24));
+
+abstract final class AppInsets {
+  static double bottomSafeSpacing(BuildContext context, {double minimum = 0}) {
+    return minimum + MediaQuery.paddingOf(context).bottom;
+  }
+
+  static EdgeInsets scrollable(
+    BuildContext context, {
+    required double left,
+    required double top,
+    required double right,
+    double bottom = 24,
+  }) {
+    return EdgeInsets.fromLTRB(
+      left,
+      top,
+      right,
+      bottomSafeSpacing(context, minimum: bottom),
+    );
+  }
+}
 
 Future<T?> showAppBottomSheet<T>({
   required BuildContext context,
@@ -371,10 +562,4 @@ Future<bool> confirmAction(
         ),
       ) ??
       false;
-}
-
-void showErrorSnackBar(BuildContext context, Object error) {
-  ScaffoldMessenger.of(
-    context,
-  ).showSnackBar(SnackBar(content: LText('操作失败：$error')));
 }

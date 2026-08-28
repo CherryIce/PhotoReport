@@ -58,6 +58,14 @@ class _AnnotatedPhotoState extends State<AnnotatedPhoto> {
       child: FutureBuilder<Size>(
         future: imageSize,
         builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return Center(
+              child: Icon(
+                Icons.image_not_supported_outlined,
+                color: context.appColors.muted,
+              ),
+            );
+          }
           if (!snapshot.hasData) {
             return const Center(
               child: CircularProgressIndicator(strokeWidth: 2),
@@ -106,12 +114,13 @@ class AnnotationPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = annotationColor
       ..style = PaintingStyle.stroke
       ..strokeWidth = math.max(2.5, size.shortestSide * 0.009)
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round;
     for (final annotation in annotations) {
+      final color = Color(annotation.colorValue);
+      paint.color = color;
       final start = Offset(
         annotation.x1 * size.width,
         annotation.y1 * size.height,
@@ -128,7 +137,7 @@ class AnnotationPainter extends CustomPainter {
           _drawArrow(canvas, start, end, paint);
           break;
         case AnnotationKind.text:
-          _drawText(canvas, start, annotation.text, size);
+          _drawText(canvas, start, annotation.text, size, color);
           break;
       }
     }
@@ -150,13 +159,19 @@ class AnnotationPainter extends CustomPainter {
     );
   }
 
-  void _drawText(Canvas canvas, Offset point, String text, Size size) {
+  void _drawText(
+    Canvas canvas,
+    Offset point,
+    String text,
+    Size size,
+    Color backgroundColor,
+  ) {
     if (text.isEmpty) return;
     final painter = TextPainter(
       text: TextSpan(
         text: text,
         style: TextStyle(
-          color: Colors.white,
+          color: annotationTextColor(backgroundColor),
           fontSize: math.max(13, size.shortestSide * 0.045),
           fontWeight: FontWeight.w800,
         ),
@@ -172,7 +187,7 @@ class AnnotationPainter extends CustomPainter {
     );
     canvas.drawRRect(
       RRect.fromRectAndRadius(rect, const Radius.circular(5)),
-      Paint()..color = annotationLabelColor,
+      Paint()..color = backgroundColor.withValues(alpha: 0.88),
     );
     painter.paint(canvas, point + const Offset(6, 4));
   }
@@ -181,4 +196,10 @@ class AnnotationPainter extends CustomPainter {
   bool shouldRepaint(covariant AnnotationPainter oldDelegate) {
     return oldDelegate.annotations != annotations;
   }
+}
+
+Color annotationTextColor(Color backgroundColor) {
+  return backgroundColor.computeLuminance() > 0.35
+      ? Colors.black
+      : Colors.white;
 }

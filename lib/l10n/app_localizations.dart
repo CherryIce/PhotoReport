@@ -39,7 +39,7 @@ class AppLocalizations {
         RegExp(r'^正式记录 · 第 (\d+)/3 步$'),
         (match) => 'Formal record · Step ${match.group(1)} of 3',
       ),
-      (RegExp(r'^(\d+) 项高优先级$'), (match) => '${match.group(1)} high priority'),
+      (RegExp(r'^(\d+) 项高优先级$'), (match) => 'High: ${match.group(1)}'),
       (
         RegExp(r'^(快速图文记录|正式记录|编辑记录) (.+)$'),
         (match) => '${text(match.group(1)!)} ${match.group(2)}',
@@ -147,13 +147,52 @@ class AppLocalizations {
   }
 
   static const Map<String, String> _english = {
-    '现场照片记录': 'On-site Photo Records',
-    '编号 · 标注 · 整理分享': 'Number · Annotate · Organize · Share',
+    '现场照片记录': 'Site Photo Log',
+    '编号 · 标注 · 整理分享': 'Number · Mark up · Organize · Share',
     '本地数据': 'Local data',
+    '设置与数据': 'Settings & data',
     '更多操作': 'More actions',
     '导出本地备份': 'Export local backup',
+    '保存项目、记录和照片': 'Save projects, records, and photos',
     '从备份恢复': 'Restore from backup',
+    '将替换当前本机数据': 'Replaces the current data on this device',
+    '显示语言': 'Display language',
+    '所有数据默认保存在本机': 'All data stays on this device by default',
     '语言': 'Language',
+    '隐私与支持': 'Privacy & support',
+    '隐私政策': 'Privacy Policy',
+    '查看本机数据与权限说明': 'Review on-device data and permissions',
+    '隐私概览': 'Privacy overview',
+    '“现场照片记录”是一款本地优先的照片记录工具。本政策说明本版本如何处理你在使用过程中提供的内容。':
+        'Site Photo Log is a local-first photo documentation tool. This policy explains how this version handles the content you provide while using it.',
+    '最后更新：2026 年 8 月 28 日': 'Last updated: August 28, 2026',
+    '我们处理的信息': 'Information we process',
+    '你主动输入的项目名称、地址、记录人、联系人、说明、负责人和期限。':
+        'Project names, addresses, recorders, contacts, descriptions, assignees, and due dates that you enter.',
+    '你通过相机拍摄或从系统相册选择的照片，以及添加的方框、箭头和文字标注。':
+        'Photos you take with the camera or select from the system photo library, including boxes, arrows, and text annotations you add.',
+    '本地存储与传输': 'On-device storage and transmission',
+    '上述内容默认保存在本设备的应用沙盒中。本版本不提供账号、云同步、广告或分析服务，开发者服务器不会接收这些内容。':
+        'This content is stored in the app sandbox on this device by default. This version does not provide accounts, cloud sync, advertising, or analytics, and developer servers do not receive this content.',
+    '系统权限': 'System permissions',
+    '仅在你主动拍照时请求相机权限；仅在你主动选择照片时请求相册访问。拒绝权限只会使对应功能不可用。':
+        'Camera access is requested only when you choose to take a photo, and photo-library access only when you choose a photo. Denying access only makes the corresponding feature unavailable.',
+    '分享与备份': 'Sharing and backups',
+    'PDF 和本地备份均在设备上生成。只有当你主动使用系统分享面板时，文件才会发送给你选择的接收方或服务。':
+        'PDF files and local backups are generated on the device. A file is sent to a recipient or service only when you choose it through the system share sheet.',
+    '文件导出应用后，由你选择的存储位置或第三方服务按照其隐私政策处理。':
+        'After a file leaves the app, the storage location or third-party service you choose handles it under its own privacy policy.',
+    '保留与删除': 'Retention and deletion',
+    '本地内容会保留到你删除项目、恢复其他备份或卸载应用。删除项目会同步删除其记录和应用管理的照片副本。':
+        'Local content remains until you delete a project, restore another backup, or uninstall the app. Deleting a project also removes its records and app-managed photo copies.',
+    '已导出的 PDF、备份或已分享的副本不在本应用控制范围内，需要由你在对应位置另行删除。':
+        'Exported PDF files, backups, and shared copies are outside the app control and must be deleted separately from their respective locations.',
+    '第三方服务': 'Third-party services',
+    '本版本使用 Flutter、iOS 系统相机、照片选择、文件预览和分享能力，不包含广告或用户行为分析 SDK。':
+        'This version uses Flutter and iOS system capabilities for the camera, photo selection, file preview, and sharing. It does not include advertising or user-behavior analytics SDKs.',
+    '政策更新与联系': 'Policy updates and contact',
+    '如果功能或数据处理方式发生变化，我们会更新本政策。若有隐私问题，请通过 App Store 产品页提供的开发者联系方式联系我们。':
+        'We will update this policy if features or data practices change. For privacy questions, contact us using the developer contact details on the App Store product page.',
     '跟随系统': 'System default',
     '简体中文': '简体中文',
     '跳过': 'Skip',
@@ -185,13 +224,21 @@ class AppLocalizations {
         'Keep each location organized, add photos later, and share again.',
     '地点待补充': 'Location not added',
     '全部记录': 'All records',
+    '条记录': 'records',
     '待处理': 'Pending',
     '处理中': 'In progress',
     '已完成': 'Completed',
     '从一个记录项目开始': 'Start with a record project',
+    '从第一个记录项目开始': 'Start with your first record project',
+    '把同一现场的照片归在一起，': 'Keep photos from the same site together.',
+    '边拍边编号，整理后直接分享。': 'Number them as you shoot, then organize and share.',
+    '新建项目': 'Create project',
+    '添加照片': 'Add photos',
     '现场边拍边编号，补充位置与说明，整理后直接生成便于沟通的照片记录。':
         'Number photos on site, add locations and notes, then create a shareable record.',
     '开始新建': 'Create a project',
+    '仅用于现场沟通与情况记录 · 数据保存在本机':
+        'For site communication and documentation · Data stays on this device',
     '内容仅用于现场沟通与情况记录，不构成专业鉴定、验收结论或法律意见。数据默认保存在本机，可从右上角导出备份。':
         'For site communication and documentation only. This is not a professional assessment, acceptance decision, or legal opinion. Data stays on this device by default; export a backup from the top-right menu.',
     '项目内的记录、照片和标注都会从本机删除，此操作无法撤销。':
@@ -212,6 +259,8 @@ class AppLocalizations {
     '首次使用时，再补一个简短的项目名称。': 'For your first record, add a short project name.',
     '将保存到': 'Save to',
     '正式记录': 'Formal record',
+    '第 2/3 步 · 继续添加记录': 'Step 2 of 3 · Continue adding records',
+    '第 3/3 步 · 继续整理复核': 'Step 3 of 3 · Continue review',
     '按项目资料、现场记录、整理复核三步完成。':
         'Complete project details, site records, and final review in three steps.',
     '3 个步骤': '3 steps',
@@ -322,11 +371,18 @@ class AppLocalizations {
     '标注照片重点': 'Annotate key details',
     '拖动绘制方框或箭头；文字模式下点击照片定位。':
         'Drag to draw a box or arrow. In text mode, tap the photo to place text.',
+    '颜色': 'Color',
+    '红色': 'Red',
+    '绿色': 'Green',
+    '蓝色': 'Blue',
+    '黑色': 'Black',
+    '白色': 'White',
     '方框': 'Box',
     '箭头': 'Arrow',
     '文字': 'Text',
     '撤销': 'Undo',
     '添加文字标注': 'Add text annotation',
+    '文字会添加在刚才点击的位置。': 'The text will be placed where you just tapped.',
     '例如：开裂处': 'Example: crack',
     '对应的前后照片和全部标注也会从本机删除。':
         'Its before/after photos and all annotations will also be deleted from this device.',
@@ -343,7 +399,11 @@ class AppLocalizations {
     '照片记录': 'Photo records',
     '按编号整理，每项都能回到具体位置与前后照片。':
         'Organized by code, with each item linked to its location and before/after photos.',
+    '按编号整理，随时回到具体位置。':
+        'Organized by code, so you can return to the exact location anytime.',
     '搜索编号、区域、标题或负责人': 'Search code, area, title, or assignee',
+    '筛选记录': 'Filter records',
+    '收起筛选': 'Hide filters',
     '全部状态': 'All statuses',
     '全部区域': 'All areas',
     '当前筛选下没有记录': 'No records match these filters',
@@ -358,6 +418,10 @@ class AppLocalizations {
     '拍照、写下位置与说明，需要时再补充负责人和期限。':
         'Take photos and add a location and note. Add an assignee and due date when needed.',
     '添加第一条记录': 'Add the first record',
+    '添加记录后即可整理分享': 'Add a record to organize and share',
+    '生成报告，与同事或业主沟通更高效。':
+        'Create a report for clearer communication with colleagues or owners.',
+    '生成 PDF': 'Create PDF',
     '图文记录': 'Photo note',
     '未分类': 'Uncategorized',
     '低': 'Low',

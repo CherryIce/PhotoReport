@@ -145,7 +145,7 @@ class _ReportPreviewScreenState extends State<ReportPreviewScreen> {
         title: LText(widget.reviewMode ? '步骤 3/3 · 整理复核' : '整理分享'),
       ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 40),
+        padding: AppInsets.scrollable(context, left: 20, top: 16, right: 20),
         children: [
           Container(
             padding: const EdgeInsets.all(20),
@@ -315,7 +315,7 @@ class _ReportPreviewScreenState extends State<ReportPreviewScreen> {
                                     await service.preview(path!);
                                   } catch (caught) {
                                     if (context.mounted) {
-                                      showErrorSnackBar(context, caught);
+                                      AppToast.showError(context, caught);
                                     }
                                   }
                                 },
@@ -331,7 +331,7 @@ class _ReportPreviewScreenState extends State<ReportPreviewScreen> {
                                     await service.share(path!);
                                   } catch (caught) {
                                     if (context.mounted) {
-                                      showErrorSnackBar(context, caught);
+                                      AppToast.showError(context, caught);
                                     }
                                   }
                                 },
@@ -466,6 +466,7 @@ class _ReportPreviewScreenState extends State<ReportPreviewScreen> {
                   avatar: const Icon(Icons.photo_library_outlined, size: 18),
                   label: const LText('简洁记录'),
                   selected: layout == ReportLayout.concise,
+                  showCheckmark: false,
                   onSelected: generating
                       ? null
                       : (_) => setLayout(ReportLayout.concise),
@@ -474,6 +475,7 @@ class _ReportPreviewScreenState extends State<ReportPreviewScreen> {
                   avatar: const Icon(Icons.description_outlined, size: 18),
                   label: const LText('完整记录'),
                   selected: layout == ReportLayout.detailed,
+                  showCheckmark: false,
                   onSelected: generating
                       ? null
                       : (_) => setLayout(ReportLayout.detailed),
@@ -564,6 +566,7 @@ class _ReportPreviewScreenState extends State<ReportPreviewScreen> {
     return FilterChip(
       label: LText(label),
       selected: selected,
+      showCheckmark: false,
       onSelected: generating ? null : onChanged,
     );
   }

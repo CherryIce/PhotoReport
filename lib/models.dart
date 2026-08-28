@@ -8,6 +8,8 @@ enum PhotoPhase { before, after }
 
 enum AnnotationKind { rectangle, arrow, text }
 
+const defaultPhotoAnnotationColorValue = 0xFFFF2D2D;
+
 extension IssueSeverityLabel on IssueSeverity {
   String get label => switch (this) {
     IssueSeverity.unspecified => '未设置',
@@ -38,6 +40,7 @@ class PhotoAnnotation {
     required this.x2,
     required this.y2,
     this.text = '',
+    this.colorValue = defaultPhotoAnnotationColorValue,
   });
 
   final AnnotationKind kind;
@@ -46,6 +49,7 @@ class PhotoAnnotation {
   final double x2;
   final double y2;
   final String text;
+  final int colorValue;
 
   Map<String, Object?> toJson() => {
     'kind': kind.name,
@@ -54,6 +58,7 @@ class PhotoAnnotation {
     'x2': x2,
     'y2': y2,
     'text': text,
+    'color': colorValue,
   };
 
   factory PhotoAnnotation.fromJson(Map<String, Object?> json) {
@@ -64,6 +69,8 @@ class PhotoAnnotation {
       x2: (json['x2']! as num).toDouble(),
       y2: (json['y2']! as num).toDouble(),
       text: json['text'] as String? ?? '',
+      colorValue:
+          (json['color'] as num?)?.toInt() ?? defaultPhotoAnnotationColorValue,
     );
   }
 }

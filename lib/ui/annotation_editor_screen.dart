@@ -1,11 +1,11 @@
 import 'dart:io';
 
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import '../models.dart';
 import 'app_theme.dart';
 import 'widgets/annotated_photo.dart';
+import 'widgets/common.dart';
 
 class AnnotationEditorScreen extends StatefulWidget {
   const AnnotationEditorScreen({required this.photo, super.key});
@@ -20,6 +20,7 @@ class _AnnotationEditorScreenState extends State<AnnotationEditorScreen> {
   late final Future<Size> imageSize;
   late List<PhotoAnnotation> annotations;
   AnnotationKind selectedKind = AnnotationKind.rectangle;
+  int selectedColorValue = defaultPhotoAnnotationColorValue;
   Offset? dragStart;
   Offset? dragCurrent;
 
@@ -38,9 +39,13 @@ class _AnnotationEditorScreenState extends State<AnnotationEditorScreen> {
   }
 
   Future<void> _addText(Offset position, Size size) async {
-    final text = await showCupertinoDialog<String>(
+    final colorValue = selectedColorValue;
+    final text = await showModalBottomSheet<String>(
       context: context,
-      builder: (context) => const _TextAnnotationDialog(),
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      useSafeArea: false,
+      builder: (context) => const _TextAnnotationSheet(),
     );
     if (!mounted || text == null || text.isEmpty) return;
     final point = _normalized(position, size);
@@ -53,6 +58,7 @@ class _AnnotationEditorScreenState extends State<AnnotationEditorScreen> {
           x2: point.dx,
           y2: point.dy,
           text: text,
+          colorValue: colorValue,
         ),
       );
     });
@@ -77,6 +83,7 @@ class _AnnotationEditorScreenState extends State<AnnotationEditorScreen> {
           y1: start.dy,
           x2: end.dx,
           y2: end.dy,
+          colorValue: selectedColorValue,
         ),
       );
       dragStart = null;
@@ -130,6 +137,7 @@ class _AnnotationEditorScreenState extends State<AnnotationEditorScreen> {
                               y1: dragStart!.dy / fitted.height,
                               x2: dragCurrent!.dx / fitted.width,
                               y2: dragCurrent!.dy / fitted.height,
+                              colorValue: selectedColorValue,
                             );
                       return Center(
                         child: SizedBox(
@@ -193,6 +201,39 @@ class _AnnotationEditorScreenState extends State<AnnotationEditorScreen> {
                   const SizedBox(height: 10),
                   Row(
                     children: [
+                      const LText(
+                        '颜色',
+                        style: TextStyle(
+                          color: editorMutedColor,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const Spacer(),
+                      for (
+                        var index = 0;
+                        index < _annotationColors.length;
+                        index++
+                      ) ...[
+                        if (index > 0) const SizedBox(width: 6),
+                        _ColorButton(
+                          label: _annotationColors[index].label,
+                          color: _annotationColors[index].color,
+                          selected:
+                              selectedColorValue ==
+                              _annotationColors[index].color.toARGB32(),
+                          onTap: () => setState(
+                            () => selectedColorValue = _annotationColors[index]
+                                .color
+                                .toARGB32(),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
                       Expanded(
                         child: _ToolButton(
                           icon: Icons.crop_square_rounded,
@@ -245,14 +286,22 @@ class _AnnotationEditorScreenState extends State<AnnotationEditorScreen> {
   }
 }
 
-class _TextAnnotationDialog extends StatefulWidget {
-  const _TextAnnotationDialog();
+const _annotationColors = <({String label, Color color})>[
+  (label: '红色', color: annotationColor),
+  (label: '绿色', color: annotationGreenColor),
+  (label: '蓝色', color: annotationBlueColor),
+  (label: '黑色', color: annotationBlackColor),
+  (label: '白色', color: annotationWhiteColor),
+];
+
+class _TextAnnotationSheet extends StatefulWidget {
+  const _TextAnnotationSheet();
 
   @override
-  State<_TextAnnotationDialog> createState() => _TextAnnotationDialogState();
+  State<_TextAnnotationSheet> createState() => _TextAnnotationSheetState();
 }
 
-class _TextAnnotationDialogState extends State<_TextAnnotationDialog> {
+class _TextAnnotationSheetState extends State<_TextAnnotationSheet> {
   final controller = TextEditingController();
 
   @override
@@ -266,30 +315,187 @@ class _TextAnnotationDialogState extends State<_TextAnnotationDialog> {
     Navigator.pop(context, text);
   }
 
+  void submit() {
+    final text = controller.text.trim();
+    if (text.isNotEmpty) close(text);
+  }
+
   @override
   Widget build(BuildContext context) {
-    return CupertinoAlertDialog(
-      title: const LText('添加文字标注'),
-      content: Padding(
-        padding: const EdgeInsets.only(top: 12),
-        child: CupertinoTextField(
-          controller: controller,
-          autofocus: true,
-          maxLength: 24,
-          placeholder: tr('例如：开裂处'),
-          clearButtonMode: OverlayVisibilityMode.editing,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          onSubmitted: (value) => close(value.trim()),
+    final canSubmit = controller.text.trim().isNotEmpty;
+    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
+    final availableHeight =
+        (MediaQuery.sizeOf(context).height - keyboardInset - 12)
+            .clamp(0.0, double.infinity)
+            .toDouble();
+    return AnimatedPadding(
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOut,
+      padding: EdgeInsets.only(bottom: keyboardInset),
+      child: Material(
+        color: editorSurfaceColor,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+        clipBehavior: Clip.antiAlias,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: availableHeight),
+          child: SingleChildScrollView(
+            key: const Key('text-annotation-sheet-scroll'),
+            padding: AppInsets.scrollable(
+              context,
+              left: 20,
+              top: 14,
+              right: 20,
+              bottom: 16,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: editorLineColor,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const LText(
+                  '添加文字标注',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                const LText(
+                  '文字会添加在刚才点击的位置。',
+                  style: TextStyle(color: editorMutedColor, fontSize: 12),
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: controller,
+                  autofocus: true,
+                  maxLength: 24,
+                  style: const TextStyle(color: Colors.white),
+                  textInputAction: TextInputAction.done,
+                  onChanged: (_) => setState(() {}),
+                  onSubmitted: (_) => submit(),
+                  decoration: InputDecoration(
+                    hintText: tr('例如：开裂处'),
+                    hintStyle: const TextStyle(color: editorMutedColor),
+                    counterStyle: const TextStyle(color: editorMutedColor),
+                    filled: true,
+                    fillColor: editorInactiveColor,
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: editorLineColor),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(
+                        color: editorAccentColor,
+                        width: 1.5,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: close,
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: editorAccentColor,
+                          side: const BorderSide(color: editorLineColor),
+                        ),
+                        child: const LText('取消'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: canSubmit ? submit : null,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: editorAccentColor,
+                          foregroundColor: editorCanvasColor,
+                        ),
+                        child: const LText('添加'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
         ),
       ),
-      actions: [
-        CupertinoDialogAction(onPressed: close, child: const LText('取消')),
-        CupertinoDialogAction(
-          isDefaultAction: true,
-          onPressed: () => close(controller.text.trim()),
-          child: const LText('添加'),
+    );
+  }
+}
+
+class _ColorButton extends StatelessWidget {
+  const _ColorButton({
+    required this.label,
+    required this.color,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final Color color;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: tr(label),
+      child: Tooltip(
+        message: tr(label),
+        excludeFromSemantics: true,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: onTap,
+            child: Container(
+              width: 44,
+              height: 44,
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: selected ? editorAccentColor : editorLineColor,
+                  width: selected ? 3 : 1,
+                ),
+              ),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: color,
+                  shape: BoxShape.circle,
+                  border: color == annotationWhiteColor
+                      ? Border.all(color: editorMutedColor)
+                      : null,
+                ),
+                child: selected
+                    ? Icon(
+                        Icons.check_rounded,
+                        size: 17,
+                        color: annotationTextColor(color),
+                      )
+                    : null,
+              ),
+            ),
+          ),
         ),
-      ],
+      ),
     );
   }
 }

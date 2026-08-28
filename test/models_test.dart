@@ -19,6 +19,7 @@ void main() {
             y1: 0.2,
             x2: 0.8,
             y2: 0.7,
+            colorValue: 0xFF22C55E,
           ),
           PhotoAnnotation(
             kind: AnnotationKind.text,
@@ -36,8 +37,22 @@ void main() {
       expect(restored.phase, PhotoPhase.before);
       expect(restored.annotations, hasLength(2));
       expect(restored.annotations.first.kind, AnnotationKind.rectangle);
+      expect(restored.annotations.first.colorValue, 0xFF22C55E);
       expect(restored.annotations.last.text, '墙面开裂');
       expect(restored.annotations.last.x1, 0.15);
+    });
+
+    test('旧版照片标注缺少颜色时仍按红色恢复', () {
+      final annotation = PhotoAnnotation.fromJson({
+        'kind': 'arrow',
+        'x1': 0.1,
+        'y1': 0.2,
+        'x2': 0.7,
+        'y2': 0.8,
+        'text': '',
+      });
+
+      expect(annotation.colorValue, defaultPhotoAnnotationColorValue);
     });
 
     test('记录字段和处理状态保持一致', () {
@@ -106,6 +121,80 @@ void main() {
       expect(options.includeStatus, isFalse);
       expect(options.includeProjectDetails, isFalse);
       expect(options.toMap()['layout'], 'concise');
+    });
+
+    testWidgets('PDF 原生桥接会携带每条标注的颜色', (tester) async {
+      Map<Object?, Object?>? payload;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(ReportService.channel, (call) async {
+            payload = call.arguments as Map<Object?, Object?>;
+            return '/tmp/report.pdf';
+          });
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(ReportService.channel, null),
+      );
+      final now = DateTime(2026, 8, 28);
+      final project = ProjectRecord(
+        id: 'project-color',
+        name: '标注颜色测试',
+        address: '',
+        companyName: '',
+        inspectorName: '',
+        clientName: '',
+        codePrefix: 'A',
+        inspectionDate: now,
+        notes: '',
+        createdAt: now,
+        updatedAt: now,
+      );
+      final issue = IssueRecord(
+        id: 'issue-color',
+        projectId: project.id,
+        sequence: 1,
+        code: 'A-001',
+        room: '',
+        location: '',
+        category: '颜色测试',
+        severity: IssueSeverity.unspecified,
+        description: '验证导出颜色',
+        status: IssueStatus.unspecified,
+        assignee: '',
+        createdAt: now,
+        updatedAt: now,
+        photos: [
+          PhotoRecord(
+            id: 'photo-color',
+            issueId: 'issue-color',
+            path: '/tmp/color.jpg',
+            phase: PhotoPhase.before,
+            createdAt: now,
+            annotations: const [
+              PhotoAnnotation(
+                kind: AnnotationKind.text,
+                x1: 0.2,
+                y1: 0.3,
+                x2: 0.2,
+                y2: 0.3,
+                text: '白色标注',
+                colorValue: 0xFFFFFFFF,
+              ),
+            ],
+          ),
+        ],
+      );
+
+      await const ReportService().generateReport(project, [
+        issue,
+      ], const ReportOptions());
+
+      final issues = payload!['issues']! as List<Object?>;
+      final firstIssue = issues.single! as Map<Object?, Object?>;
+      final photos = firstIssue['photos']! as List<Object?>;
+      final firstPhoto = photos.single! as Map<Object?, Object?>;
+      final annotations = firstPhoto['annotations']! as List<Object?>;
+      final annotation = annotations.single! as Map<Object?, Object?>;
+      expect(annotation['color'], 0xFFFFFFFF);
     });
 
     test('快速记录从说明首行生成稳定标题', () {

@@ -38,6 +38,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   IssueStatus? statusFilter;
   String roomFilter = '全部区域';
   String searchText = '';
+  bool filtersExpanded = false;
   bool didAutoStartIssue = false;
   late bool formalFlowActive;
 
@@ -68,6 +69,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
             !loaded.any((issue) => issue.room == roomFilter)) {
           roomFilter = '全部区域';
         }
+        if (loaded.length <= 1) filtersExpanded = false;
       });
     } catch (caught) {
       if (!mounted) return;
@@ -105,7 +107,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       await widget.controller.saveProject(result);
       if (mounted) setState(() => project = result);
     } catch (caught) {
-      if (mounted) showErrorSnackBar(context, caught);
+      if (mounted) AppToast.showError(context, caught);
     }
   }
 
@@ -144,7 +146,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         await openIssue(entryMode: mode);
       }
     } catch (caught) {
-      if (mounted) showErrorSnackBar(context, caught);
+      if (mounted) AppToast.showError(context, caught);
     }
   }
 
@@ -159,7 +161,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       await widget.controller.deleteIssue(issue.id);
       await refresh();
     } catch (caught) {
-      if (mounted) showErrorSnackBar(context, caught);
+      if (mounted) AppToast.showError(context, caught);
     }
   }
 
@@ -203,8 +205,76 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         await service.preview(project.lastReportPath);
       }
     } catch (caught) {
-      if (mounted) showErrorSnackBar(context, caught);
+      if (mounted) AppToast.showError(context, caught);
     }
+  }
+
+  Widget _buildFilters(BuildContext context, List<String> rooms) {
+    return Container(
+      key: const Key('detail-filters-panel'),
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: context.appColors.softSurface.withValues(alpha: 0.7),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextField(
+            onChanged: (value) => setState(() => searchText = value),
+            decoration: InputDecoration(
+              hintText: tr('搜索编号、区域、标题或负责人'),
+              prefixIcon: const Icon(Icons.search_rounded),
+              isDense: true,
+            ),
+          ),
+          const SizedBox(height: 10),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                ChoiceChip(
+                  label: const LText('全部状态'),
+                  selected: statusFilter == null,
+                  onSelected: (_) => setState(() => statusFilter = null),
+                ),
+                const SizedBox(width: 7),
+                for (final status in IssueStatus.values) ...[
+                  ChoiceChip(
+                    label: LText(status.label),
+                    selected: statusFilter == status,
+                    onSelected: (_) => setState(
+                      () =>
+                          statusFilter = statusFilter == status ? null : status,
+                    ),
+                  ),
+                  const SizedBox(width: 7),
+                ],
+              ],
+            ),
+          ),
+          if (rooms.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  for (final room in ['全部区域', ...rooms]) ...[
+                    FilterChip(
+                      label: LText(room, translate: room == '全部区域'),
+                      selected: roomFilter == room,
+                      onSelected: (_) => setState(() => roomFilter = room),
+                    ),
+                    const SizedBox(width: 7),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
   }
 
   @override
@@ -225,6 +295,10 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
             .toSet()
             .toList()
           ..sort();
+    final hasIssues = issues.isNotEmpty;
+    final entryMode = formalFlowActive
+        ? IssueEntryMode.formal
+        : IssueEntryMode.quick;
     return Scaffold(
       appBar: AppBar(
         title: LText(
@@ -263,188 +337,37 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                             ),
                             const SizedBox(height: 12),
                           ],
-                          _ProjectHeader(project: project),
-                          const SizedBox(height: 14),
-                          LayoutBuilder(
-                            builder: (context, constraints) {
-                              final columns =
-                                  AppLocalizations.isEnglish() &&
-                                      constraints.maxWidth < 520
-                                  ? 2
-                                  : 4;
-                              final width =
-                                  (constraints.maxWidth - (columns - 1) * 8) /
-                                  columns;
-                              final metrics = [
-                                (
-                                  value: issues.length,
-                                  label: '全部',
-                                  color: context.appColors.ink,
-                                ),
-                                (
-                                  value: pending,
-                                  label: '待处理',
-                                  color: context.appColors.pending,
-                                ),
-                                (
-                                  value: inProgress,
-                                  label: '处理中',
-                                  color: context.appColors.inProgress,
-                                ),
-                                (
-                                  value: completed,
-                                  label: '已完成',
-                                  color: context.appColors.completed,
-                                ),
-                              ];
-                              return Wrap(
-                                spacing: 8,
-                                runSpacing: 8,
-                                children: [
-                                  for (final metric in metrics)
-                                    SizedBox(
-                                      width: width,
-                                      child: MetricTile(
-                                        value: metric.value,
-                                        label: metric.label,
-                                        color: metric.color,
-                                        compact: true,
-                                      ),
-                                    ),
-                                ],
-                              );
-                            },
+                          _ProjectHeader(
+                            project: project,
+                            showQuickMode: !formalFlowActive,
+                            showStatus: hasIssues,
+                            total: issues.length,
+                            pending: pending,
+                            inProgress: inProgress,
+                            completed: completed,
                           ),
-                          const SizedBox(height: 14),
-                          SizedBox(
-                            width: double.infinity,
-                            child: FilledButton.icon(
-                              onPressed: issues.isEmpty ? null : openReport,
-                              icon: const Icon(Icons.picture_as_pdf_outlined),
-                              label: LText(
-                                issues.isEmpty
-                                    ? '添加记录后可整理分享'
-                                    : formalFlowActive
-                                    ? '步骤 3：整理复核'
-                                    : '整理并生成 PDF',
+                          if (hasIssues) ...[
+                            const SizedBox(height: 24),
+                            _IssueSectionHeader(
+                              canFilter: issues.length > 1,
+                              filtersExpanded: filtersExpanded,
+                              onToggleFilters: () => setState(
+                                () => filtersExpanded = !filtersExpanded,
                               ),
+                              onAdd: () => openIssue(entryMode: entryMode),
                             ),
-                          ),
-                          if (project.lastReportPath.isNotEmpty) ...[
-                            const SizedBox(height: 10),
-                            Card(
-                              child: ListTile(
-                                leading: Icon(
-                                  Icons.history_rounded,
-                                  color: context.appColors.brand,
-                                ),
-                                title: const LText('最近生成的沟通记录'),
-                                subtitle: LText(
-                                  project.lastReportAt == null
-                                      ? '可直接再次预览或分享'
-                                      : '${DateFormat('yyyy-MM-dd HH:mm').format(project.lastReportAt!)} 生成',
-                                ),
-                                trailing: Wrap(
-                                  spacing: 2,
-                                  children: [
-                                    IconButton(
-                                      tooltip: tr('预览最近 PDF'),
-                                      onPressed: () =>
-                                          useRecentReport(share: false),
-                                      icon: const Icon(
-                                        Icons.visibility_outlined,
-                                      ),
-                                    ),
-                                    IconButton(
-                                      tooltip: tr('再次分享'),
-                                      onPressed: () =>
-                                          useRecentReport(share: true),
-                                      icon: const Icon(Icons.ios_share_rounded),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
+                            if (filtersExpanded) _buildFilters(context, rooms),
+                            const SizedBox(height: 14),
                           ],
-                          const SizedBox(height: 24),
-                          const SectionHeader(
-                            title: '照片记录',
-                            subtitle: '按编号整理，每项都能回到具体位置与前后照片。',
-                          ),
-                          const SizedBox(height: 12),
-                          TextField(
-                            onChanged: (value) =>
-                                setState(() => searchText = value),
-                            decoration: InputDecoration(
-                              hintText: tr('搜索编号、区域、标题或负责人'),
-                              prefixIcon: Icon(Icons.search_rounded),
-                              isDense: true,
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          SingleChildScrollView(
-                            scrollDirection: Axis.horizontal,
-                            child: Row(
-                              children: [
-                                ChoiceChip(
-                                  label: const LText('全部状态'),
-                                  selected: statusFilter == null,
-                                  onSelected: (_) =>
-                                      setState(() => statusFilter = null),
-                                ),
-                                const SizedBox(width: 7),
-                                for (final status in IssueStatus.values) ...[
-                                  ChoiceChip(
-                                    label: LText(status.label),
-                                    selected: statusFilter == status,
-                                    onSelected: (_) => setState(
-                                      () =>
-                                          statusFilter = statusFilter == status
-                                          ? null
-                                          : status,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 7),
-                                ],
-                              ],
-                            ),
-                          ),
-                          if (rooms.isNotEmpty) ...[
-                            const SizedBox(height: 8),
-                            SingleChildScrollView(
-                              scrollDirection: Axis.horizontal,
-                              child: Row(
-                                children: [
-                                  for (final room in ['全部区域', ...rooms]) ...[
-                                    FilterChip(
-                                      label: LText(
-                                        room,
-                                        translate: room == '全部区域',
-                                      ),
-                                      selected: roomFilter == room,
-                                      onSelected: (_) =>
-                                          setState(() => roomFilter = room),
-                                    ),
-                                    const SizedBox(width: 7),
-                                  ],
-                                ],
-                              ),
-                            ),
-                          ],
-                          const SizedBox(height: 14),
                         ],
                       ),
                     ),
                   ),
-                  if (issues.isEmpty)
+                  if (!hasIssues)
                     SliverFillRemaining(
                       hasScrollBody: false,
                       child: _EmptyIssues(
-                        onCreate: () => openIssue(
-                          entryMode: formalFlowActive
-                              ? IssueEntryMode.formal
-                              : IssueEntryMode.quick,
-                        ),
+                        onCreate: () => openIssue(entryMode: entryMode),
                       ),
                     )
                   else if (filteredIssues.isEmpty)
@@ -458,7 +381,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                               color: context.appColors.muted,
                               size: 38,
                             ),
-                            SizedBox(height: 10),
+                            const SizedBox(height: 10),
                             LText(
                               '当前筛选下没有记录',
                               style: TextStyle(color: context.appColors.muted),
@@ -467,9 +390,9 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                         ),
                       ),
                     )
-                  else
+                  else ...[
                     SliverPadding(
-                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 110),
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
                       sliver: SliverList.separated(
                         itemCount: filteredIssues.length,
                         separatorBuilder: (_, _) => const SizedBox(height: 10),
@@ -483,19 +406,25 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                         },
                       ),
                     ),
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: EdgeInsets.fromLTRB(
+                          16,
+                          28,
+                          16,
+                          AppInsets.bottomSafeSpacing(context, minimum: 24),
+                        ),
+                        child: _ShareSection(
+                          project: project,
+                          onCreate: openReport,
+                          onPreviewRecent: () => useRecentReport(share: false),
+                          onShareRecent: () => useRecentReport(share: true),
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ),
-            ),
-      floatingActionButton: loading || error != null
-          ? null
-          : FloatingActionButton.extended(
-              onPressed: () => openIssue(
-                entryMode: formalFlowActive
-                    ? IssueEntryMode.formal
-                    : IssueEntryMode.quick,
-              ),
-              icon: const Icon(Icons.add_a_photo_outlined),
-              label: LText(formalFlowActive ? '添加记录' : '快速记录'),
             ),
     );
   }
@@ -510,54 +439,51 @@ class _FormalFlowBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(15),
+      key: const Key('formal-flow-banner'),
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: context.appColors.brand.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(16),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            width: 44,
-            height: 44,
-            alignment: Alignment.center,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
             decoration: BoxDecoration(
               color: context.appColors.brand,
-              borderRadius: BorderRadius.circular(13),
+              borderRadius: BorderRadius.circular(99),
             ),
             child: LText(
-              '$step/3',
+              '正式记录 · $step/3',
               style: TextStyle(
                 color: context.appColors.onBrand,
+                fontSize: 12,
                 fontWeight: FontWeight.w800,
               ),
             ),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                LText(
-                  step == 3 ? '整理复核' : '添加现场记录',
-                  style: TextStyle(
-                    color: context.appColors.ink,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                LText(
-                  step == 3
-                      ? '检查缺失项后生成完整记录。'
-                      : issueCount == 0
-                      ? '先添加第一条记录，可随时暂存退出。'
-                      : '已添加 $issueCount 条，可继续添加或进入整理复核。',
-                  style: TextStyle(
-                    color: context.appColors.muted,
-                    fontSize: 12,
-                  ),
-                ),
-              ],
+          const SizedBox(height: 12),
+          LText(
+            step == 3 ? '整理复核' : '添加现场记录',
+            style: TextStyle(
+              color: context.appColors.ink,
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 5),
+          LText(
+            step == 3
+                ? '检查缺失项后生成完整记录。'
+                : issueCount == 0
+                ? '先添加第一条记录，可随时暂存退出。'
+                : '已添加 $issueCount 条，可继续添加或进入整理复核。',
+            style: TextStyle(
+              color: context.appColors.muted,
+              fontSize: 12,
+              height: 1.4,
             ),
           ),
         ],
@@ -567,9 +493,23 @@ class _FormalFlowBanner extends StatelessWidget {
 }
 
 class _ProjectHeader extends StatelessWidget {
-  const _ProjectHeader({required this.project});
+  const _ProjectHeader({
+    required this.project,
+    required this.showQuickMode,
+    required this.showStatus,
+    required this.total,
+    required this.pending,
+    required this.inProgress,
+    required this.completed,
+  });
 
   final ProjectRecord project;
+  final bool showQuickMode;
+  final bool showStatus;
+  final int total;
+  final int pending;
+  final int inProgress;
+  final int completed;
 
   @override
   Widget build(BuildContext context) {
@@ -579,6 +519,36 @@ class _ProjectHeader extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (showQuickMode) ...[
+              Container(
+                key: const Key('detail-quick-mode'),
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                decoration: BoxDecoration(
+                  color: context.appColors.brand.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(99),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.photo_camera_outlined,
+                      size: 16,
+                      color: context.appColors.brand,
+                    ),
+                    const SizedBox(width: 5),
+                    LText(
+                      '快速记录',
+                      style: TextStyle(
+                        color: context.appColors.brand,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+            ],
             Row(
               children: [
                 Icon(
@@ -620,9 +590,161 @@ class _ProjectHeader extends StatelessWidget {
                   ),
               ],
             ),
+            if (showStatus) ...[
+              const SizedBox(height: 14),
+              Divider(height: 1, color: context.appColors.line),
+              const SizedBox(height: 10),
+              CompactStatusSummary(
+                total: total,
+                pending: pending,
+                inProgress: inProgress,
+                completed: completed,
+              ),
+            ],
           ],
         ),
       ),
+    );
+  }
+}
+
+class _IssueSectionHeader extends StatelessWidget {
+  const _IssueSectionHeader({
+    required this.canFilter,
+    required this.filtersExpanded,
+    required this.onToggleFilters,
+    required this.onAdd,
+  });
+
+  final bool canFilter;
+  final bool filtersExpanded;
+  final VoidCallback onToggleFilters;
+  final VoidCallback onAdd;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 350;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: LText(
+                    '照片记录',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      color: context.appColors.ink,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                if (canFilter) ...[
+                  IconButton.filledTonal(
+                    key: const Key('detail-filter-toggle'),
+                    tooltip: tr(filtersExpanded ? '收起筛选' : '筛选记录'),
+                    onPressed: onToggleFilters,
+                    icon: Icon(
+                      filtersExpanded
+                          ? Icons.filter_alt_off_outlined
+                          : Icons.filter_list_rounded,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                if (compact)
+                  SizedBox.square(
+                    dimension: 48,
+                    child: FilledButton(
+                      key: const Key('detail-add-record'),
+                      onPressed: onAdd,
+                      style: FilledButton.styleFrom(padding: EdgeInsets.zero),
+                      child: const Icon(Icons.add_rounded),
+                    ),
+                  )
+                else
+                  FilledButton.icon(
+                    key: const Key('detail-add-record'),
+                    onPressed: onAdd,
+                    icon: const Icon(Icons.add_rounded),
+                    label: const LText('添加记录'),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            LText(
+              '按编号整理，随时回到具体位置。',
+              style: TextStyle(color: context.appColors.muted, fontSize: 13),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _ShareSection extends StatelessWidget {
+  const _ShareSection({
+    required this.project,
+    required this.onCreate,
+    required this.onPreviewRecent,
+    required this.onShareRecent,
+  });
+
+  final ProjectRecord project;
+  final VoidCallback onCreate;
+  final VoidCallback onPreviewRecent;
+  final VoidCallback onShareRecent;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      key: const Key('detail-share-section'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SectionHeader(title: '整理分享', subtitle: '生成报告，与同事或业主沟通更高效。'),
+        const SizedBox(height: 14),
+        OutlinedButton.icon(
+          key: const Key('detail-generate-pdf'),
+          onPressed: onCreate,
+          icon: const Icon(Icons.picture_as_pdf_outlined),
+          label: const LText('生成 PDF'),
+        ),
+        if (project.lastReportPath.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Card(
+            key: const Key('detail-recent-report'),
+            child: ListTile(
+              leading: Icon(
+                Icons.history_rounded,
+                color: context.appColors.brand,
+              ),
+              title: const LText('最近生成的沟通记录'),
+              subtitle: LText(
+                project.lastReportAt == null
+                    ? '可直接再次预览或分享'
+                    : '${DateFormat('yyyy-MM-dd HH:mm').format(project.lastReportAt!)} 生成',
+              ),
+              trailing: Wrap(
+                spacing: 2,
+                children: [
+                  IconButton(
+                    tooltip: tr('预览最近 PDF'),
+                    onPressed: onPreviewRecent,
+                    icon: const Icon(Icons.visibility_outlined),
+                  ),
+                  IconButton(
+                    tooltip: tr('再次分享'),
+                    onPressed: onShareRecent,
+                    icon: const Icon(Icons.ios_share_rounded),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ],
     );
   }
 }
@@ -723,11 +845,15 @@ class _IssueCard extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(width: 7),
-                        Flexible(
-                          child: SeverityBadge(severity: issue.severity),
+                        Expanded(
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: SeverityBadge(severity: issue.severity),
+                          ),
                         ),
                         const SizedBox(width: 2),
                         PopupMenuButton<String>(
+                          key: Key('issue-actions-${issue.id}'),
                           padding: EdgeInsets.zero,
                           tooltip: tr('记录操作'),
                           onSelected: (value) {
@@ -805,35 +931,66 @@ class _EmptyIssues extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(32, 30, 32, 120),
+      padding: EdgeInsets.fromLTRB(
+        32,
+        24,
+        32,
+        AppInsets.bottomSafeSpacing(context, minimum: 24),
+      ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(
             Icons.add_photo_alternate_outlined,
             color: context.appColors.brand,
-            size: 48,
+            size: 54,
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 18),
           LText(
             '还没有现场记录',
             style: TextStyle(
               color: context.appColors.ink,
               fontWeight: FontWeight.w800,
-              fontSize: 17,
+              fontSize: 20,
             ),
           ),
-          const SizedBox(height: 7),
+          const SizedBox(height: 9),
           LText(
             '拍照、写下位置与说明，需要时再补充负责人和期限。',
             textAlign: TextAlign.center,
-            style: TextStyle(color: context.appColors.muted),
+            style: TextStyle(color: context.appColors.muted, height: 1.5),
           ),
-          const SizedBox(height: 16),
-          OutlinedButton.icon(
-            onPressed: onCreate,
-            icon: const Icon(Icons.add_rounded),
-            label: const LText('添加第一条记录'),
+          const Spacer(),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              key: const Key('detail-empty-add-record'),
+              onPressed: onCreate,
+              icon: const Icon(Icons.add_rounded),
+              label: const LText('添加第一条记录'),
+            ),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.lock_outline_rounded,
+                size: 15,
+                color: context.appColors.muted,
+              ),
+              const SizedBox(width: 6),
+              Flexible(
+                child: LText(
+                  '添加记录后即可整理分享',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: context.appColors.muted,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),

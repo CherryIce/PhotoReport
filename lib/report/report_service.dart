@@ -93,6 +93,7 @@ class ReportService {
                               'x2': annotation.x2,
                               'y2': annotation.y2,
                               'text': annotation.text,
+                              'color': annotation.colorValue,
                             },
                           )
                           .toList(),
